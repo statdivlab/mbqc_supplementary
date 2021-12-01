@@ -16,6 +16,9 @@
 ## Use environment variables
 #$ -V
 
+## Allocate memory
+#$-l h_vmem=<%= resources$memory %>
+
 ## Use correct queue
 #$ -q <%= resources$queue %>
 

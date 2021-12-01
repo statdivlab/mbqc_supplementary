@@ -1,39 +1,117 @@
 
-
-### mbqc paper data extraction function
 paper_extractor <- function(dummy_var){ #function to extract mbqc paper data
-  
+
   print(dummy_var)
-  if(file.exists("/nbt.3981-S9.zip")){
-  mbqc_paper_data <- read.csv(file = paste(getwd(),"/nbt.3981-S9.zip",sep = ""),
-                              sep = "\t")} else{
-            stop("File nbt.3981-S9.zip not found. \n 
+  gc()
+  if(file.exists("nbt.3981-S9.zip")){
+    print("trying to read in data")
+
+  } else{
+            stop("File nbt.3981-S9.zip not found. \n
             To proceed, download supplementary data set 6 \n
             at https://www.nature.com/articles/nbt.3981 \n
             and rename downloaded file nbt.3981-S9.zip as necessary.")
                               }
-  # transpose object so variables are columns
-  mbqc_paper_data %<>% t()
+
+
+  ncol_paper <- 28435
+
+
+  nchunks <- ceiling(ncol_paper/5000)
+
+  dir.create("paper_temp")
+
+  for(chunk in 1:nchunks){
+    # system('free -m')
+    print(paste("reading in chunk ", chunk, sep = "", collapse = " "))
+
+    temp <- read.table(file = paste(getwd(),"/nbt.3981-S9.zip",sep = ""),
+                       header = FALSE,
+                       sep = "\t",
+                       skip =(chunk - 1)*5000,
+                       nrows = 5000)
+    cnames <- temp[,1]
+
+    temp <- as.data.table(t(temp[,-1]))
+    
+    colnames(temp) <- cnames
+
+    print("data loaded")
+
+    saveRDS(temp,
+            file = paste("paper_temp/paper_chunk",chunk, sep = "", collapse = "")
+            )
+  }
+
+
+  mbqc_paper_data <- readRDS(file = paste("paper_temp/paper_chunk",1, sep = "",
+                                                collapse = ""))
+
+
+  # saveRDS(mbqc_paper_data, file = "mbqc_paper_data")
+  # rm("mbqc_paper_data")
+
+  for(chunk in 2:nchunks){
+    print("reading in new chunk")
+    temp <- readRDS(file = paste("paper_temp/paper_chunk",chunk, sep = "",
+                                 collapse = ""))
+
+    print("reading in mbqc_paper_data")
+    # mbqc_paper_data <- readRDS("mbqc_paper_data")
+
+    mbqc_paper_data <- cbind(mbqc_paper_data,temp)
+
+    rm(temp)
+
+    
+    
+    # if(chunk < nchunks){
+    # rm(mbqc_paper_data)
+    # }
+    
+    gc()
+
+    print(paste("added chunk", chunk, collapse = ""))
+
+  }
   
-  # properly format column names (currently first row)
-  colnames(mbqc_paper_data) <- mbqc_paper_data[1,]
-  mbqc_paper_data %<>% (function(x) x[-1,])
   
-  # format as data table
-  mbqc_paper_data %<>% as.data.table
+
+
   
+
+  unlink("paper_temp", recursive = TRUE)
+
+  print("temporary data removed")
+  
+ 
+
+  # # properly format column names (currently first row)
+  # colnames(mbqc_paper_data) <- mbqc_paper_data[1,]
+  # mbqc_paper_data %<>% (function(x) x[-1,])
+
+  # # format as data table
+  # mbqc_paper_data %<>% as.data.table
+
   # format count data as numeric variables
-  mbqc_paper_data %>%
-    dplyr::select(starts_with("k__")) %<>%
-    apply(2,as.numeric)
+  to_numeric <- sapply(colnames(mbqc_paper_data),
+                       function(x) grepl("k__",x,fixed = TRUE))
   
+  to_numeric <- colnames(mbqc_paper_data)[to_numeric]
+  
+  
+  mbqc_paper_data[,(to_numeric):= lapply(.SD, as.numeric), .SDcols = to_numeric]
+  mbqc_paper_data %<>% as.data.frame()
+  
+
+
   # filter out rows with invalid values of sequencing wet lab
   mbqc_paper_data %<>%
     filter(!is.na(sequencing_wetlab))
   mbqc_paper_data %<>%
     filter(sequencing_wetlab != "Unknown")
-  
-  
+
+
   # filter out rows with invalid values of bioinformatics lab
   mbqc_paper_data %<>%
     filter(!is.na(dry_lab))
@@ -41,60 +119,139 @@ paper_extractor <- function(dummy_var){ #function to extract mbqc paper data
     filter(dry_lab != "Unknown")
   mbqc_paper_data %<>%
     filter(dry_lab != "BL-10") #BL-10 not included in MBQC analysis
-  
+
   # filter out rows with invalid values of specimen
   mbqc_paper_data %<>%
     filter(!is.na(specimen)) %<>%
     filter(specimen != "Unknown")
-  
+
   # save full dataset
-  saveRDS(mbqc_paper_data, 
+  if(!dir.exists("mbqc_paper_data_products")){
+    dir.create("mbqc_paper_data_products")
+  }
+  saveRDS(mbqc_paper_data,
           file = "mbqc_paper_data_products/full_data_table")
-  
+
   # save data sets for each sequencing lab
   seq_labs <- mbqc_paper_data$sequencing_wetlab %>% unique
-  
+
   for(lab in seq_labs){
     mbqc_paper_data %>%
       dplyr::filter(sequencing_wetlab == lab) %>%
       saveRDS(file = paste("mbqc_paper_data_products/",lab,sep = ""))
+    print(paste("saved data for wet lab ", lab,sep = "", collapse = ""))
   }
-  
+
   # save metadata only
   mbqc_paper_data %>%
     dplyr::select(-starts_with("k__")) %>%
     saveRDS(file = "mbqc_paper_data_products/meta_only")
   
-  rm(mbqc_paper_data)
-  
-  return("done")} 
+  print("saved metadata")
+
+
+
+  return("done")}
 
 ### hmp site data extraction function
 site_extractor <- function(dummy_var){
   
   print(dummy_var)
+  gc()
   if(file.exists("mbqc_integrated_otus.tsv.gz")){
-  mbqc_site_data <- read.csv(file = paste(getwd(),"/mbqc_integrated_otus.tsv.gz",sep = ""),
-                             sep = "\t")} else{
+    print("trying to read in data")
+ 
+  } else{
                                   stop("File mbqc_integrated_otus.tsv.gz not found. \n 
             To proceed, download integrated OTU table  \n
             at http://downloads.ihmpdcc.org/data/MBQC/mbqc_integrated_otus.tsv.gz \n
             and rename downloaded file mbqc_integrated_otus.tsv.gz as necessary.")
-                                }
+  }
+  print("successfully read in data")
   # transpose object so variables are columns
-  mbqc_site_data %<>% t()
   
-  # properly format column names (currently first row) and remove first row
-  colnames(mbqc_site_data) <- mbqc_site_data[1,]
-  mbqc_site_data %<>% (function(x) x[-1,])
+  ncol_site <- 27282
   
-  # format as data table
-  mbqc_site_data %<>% as.data.table
+  
+  nchunks <- ceiling(ncol_site/5000)
+  
+  dir.create("site_temp")
+  
+  for(chunk in 1:nchunks){
+    # system('free -m')
+    print(paste("reading in chunk ", chunk, sep = "", collapse = " "))
+    
+    temp <- read.table(file = paste(getwd(),"/mbqc_integrated_otus.tsv.gz",sep = ""),
+                       header = FALSE,
+                       sep = "\t",
+                       skip =(chunk - 1)*5000,
+                       nrows = 5000)
+    
+    cnames <- temp[,1]
+    
+    temp <- as.data.table(t(temp[,-1]))
+    
+    colnames(temp) <- cnames
+    
+    print("data loaded")
+    
+    saveRDS(temp,
+            file = paste("site_temp/site_chunk",chunk, sep = "", collapse = "")
+    )
+  }
+  
+  
+  mbqc_site_data <- readRDS(file = paste("site_temp/site_chunk",1, sep = "",
+                                          collapse = ""))
+  
+  # saveRDS(mbqc_paper_data, file = "mbqc_paper_data")
+  # rm("mbqc_paper_data")
+  
+  for(chunk in 2:nchunks){
+    print("reading in new chunk")
+    temp <- readRDS(file = paste("site_temp/site_chunk",chunk, sep = "",
+                                 collapse = ""))
+    
+    print("reading in mbqc_site_data")
+    
+    mbqc_site_data <- cbind(mbqc_site_data,temp)
+    
+    rm(temp)
+    
+
+    # }
+    
+    gc()
+    
+    print(paste("added chunk", chunk, collapse = ""))
+    
+  }
+  
+  
+  
+  
+  print("data transposed")
+  
+  unlink("site_temp", recursive = TRUE)
+  
+  
+  # properly format column names (currently first row)
+  # colnames(mbqc_site_data) <- mbqc_site_data[1,]
+  # mbqc_site_data %<>% (function(x) x[-1,])
+  # 
+  # # format as data table
+  # mbqc_site_data %<>% as.data.table
   
   # format count data as numeric variables
-  mbqc_site_data %>%
-    dplyr::select(starts_with("k__")) %<>%
-    apply(2,as.numeric)
+  to_numeric <- sapply(colnames(mbqc_site_data),
+                       function(x) grepl("k__",x,fixed = TRUE))
+  
+  to_numeric <- colnames(mbqc_site_data)[to_numeric]
+  
+  
+  mbqc_site_data[,(to_numeric):= lapply(.SD, as.numeric), .SDcols = to_numeric]
+  
+  mbqc_site_data %<>% as.data.frame()
   
   # filter out rows with invalid values of sequencing wet lab
   mbqc_site_data %<>%
@@ -113,6 +270,9 @@ site_extractor <- function(dummy_var){
   
   
   # save full dataset
+  if(!dir.exists("hmp_mbqc_site_data_products")){
+    dir.create("hmp_mbqc_site_data_products")
+  }
   saveRDS(mbqc_site_data,
           file = "hmp_mbqc_site_data_products/full_data_table")
   
@@ -123,6 +283,7 @@ site_extractor <- function(dummy_var){
     mbqc_site_data %>%
       dplyr::filter(sequencing_wetlab == lab) %>%
       saveRDS(file = paste("hmp_mbqc_site_data_products/",lab,sep = ""))
+    print(paste("saved data for wet lab ", lab,sep = "", collapse = ""))
   }
   
   # save metadata only
@@ -131,7 +292,7 @@ site_extractor <- function(dummy_var){
     dplyr::select(-starts_with("k__")) %>%
     saveRDS(file = "hmp_mbqc_site_data_products/meta_only")
   
-  rm(mbqc_site_data)
+  print("saved metadata")
   
   return("done")
 }
@@ -215,11 +376,7 @@ split_test <- function(wet_lab,
                        included_dry_labs,
                        seed = 54332,
                        level){
-  library(magrittr)
-  library(tidyr)
-  library(dplyr)
-  library(RDS)
-  library(data.table)
+
   
   #print wet lab
   print(wet_lab)
@@ -339,6 +496,19 @@ split_test <- function(wet_lab,
     }
   }
   
+  # in the case (HL-C only) where only one sample from a specimen
+  # is available, make sure that sample is assigned to the training set
+  unique_training <- unique(wet_lab_data[!wet_lab_data$test,"specimen"])
+  unique_test <- unique(wet_lab_data[wet_lab_data$test,"specimen"])
+  
+  if(length(unique_training)< length(unique_test)){
+    warning("Not all specimens in test set represented in training set.
+Reassigning missing specimens to training set.")
+    missing_specimen <- setdiff(unique_test,unique_training)
+    wet_lab_data[wet_lab_data$specimen == missing_specimen,"test"] <- FALSE
+  }
+  
+  
   
   print("about to aggregate")
     aggregated_data <- aggregate_level(wet_lab_data,level)
@@ -364,7 +534,8 @@ transform_data <- function(untransformed_data,
   #convert to proportion-scale data if indicated
   if((transformation == "proportion")|
      (transformation == "proportion_diff")|
-     transformation == "proportion_diff_scale"){
+     transformation == "proportion_diff_scale"|
+     transformation == "proportion_ecdf"){
     #convert to relative abundances
     row_totals <- apply(untransformed_data,1,sum)
     for(i in 1:length(row_totals)){
@@ -382,8 +553,10 @@ transform_data <- function(untransformed_data,
   }
   
   #convert to centered-log-ratio transformed data (using pseudocount of 1) if indicated
-  if((transformation == "clr_pseudo_1")|(transformation == "clr_pseudo_1_diff")|
-     transformation == "clr_pseudo_1_diff_scale"){ 
+  if((transformation == "clr_pseudo_1")|
+     (transformation == "clr_pseudo_1_diff")|
+    ( transformation == "clr_pseudo_1_diff_scale")|
+    (transformation == "clr_pseudo_1_ecdf")){ 
     untransformed_data %<>% apply(c(1,2), function(x){
       if(x>0){ return(x)} else{ #if count >0, return count
         return(1) # else return 1 (pseudocount)
@@ -415,7 +588,7 @@ center_data <- function(transformed_data,
   
   for(i in 1:length(specs)){
     spec <- specs[i]
-    spec_means[i,] <- apply(transformed_data[specimens == spec,],2,mean)
+    spec_means[i,] <- apply(transformed_data[specimens == spec,,drop = F],2,mean)
   }
   
   spec_mean <- apply(spec_means,2,mean)
@@ -426,6 +599,49 @@ center_data <- function(transformed_data,
   return(transformed_data)
 }
 
+### function to transform to taxon-wise ecdf
+
+ecdf_by_taxon <- function(transformed_data){
+
+  for(j in 1:ncol(transformed_data)){
+    transformed_data[,j] %<>% (function(x) sapply(x, function(k) mean(x<=k)))
+  }
+  return(transformed_data)
+}
+
+### function to get between-specimen sds
+get_sds <- function(transformed_data,
+                    specimens){
+  
+  specimens %<>% as.character()
+  
+  specs <- unique(specimens)
+  
+  
+  spec_means <- matrix(nrow = length(specs),
+                       ncol = ncol(transformed_data))
+  
+  for(i in 1:length(specs)){
+    spec <- specs[i]
+    spec_means[i,] <- apply(transformed_data[specimens == spec,,drop = F],2,mean)
+  }
+  
+  spec_vars <- apply(spec_means,2,function(x) var(x, na.rm= TRUE))
+  spec_vars[spec_vars ==0] <- 1 #i.e., leave alone variables that don't vary
+  spec_sds <- sqrt(spec_vars)
+  return(spec_sds)
+  
+}
+
+### function to rescale data
+rescale_data <- function(transformed_data,
+                         spec_sds){
+  
+  for(i in 1:nrow(transformed_data)){
+    transformed_data[i,] <- (transformed_data[i,]/spec_sds)
+  }
+  return(transformed_data)
+}
 
 #function to evaluate xgboost CV performance on training data for one set of parameters
 do_one_xgb_cv <- function(wet_lab,
@@ -438,23 +654,22 @@ do_one_xgb_cv <- function(wet_lab,
                           cv_seed,
                           train_seed,
                           level,
-                          transformation = "proportion"){
+                          transformation = "proportion",
+                          dry_lab_subset = NULL){
 
-  #load libraries
-  library(xgboost)
-  library(magrittr)
-  library(tidyr)
-  library(dplyr)
-  library(RDS)
-  library(data.table)
   
   #print wet lab
   print(wet_lab)
+  print(dry_lab_subset)
 
   
   #load wet lab training data
 
   train_data <- readRDS(paste(wet_lab,"_train_",level,"_",train_seed,sep = ""))
+  
+  if(!is.null(dry_lab_subset)){
+    train_data %<>% dplyr::filter(dry_lab %in% dry_lab_subset)
+  }
 
   #collapse human specimen types (following Sinha, et al.)
   if(class_var == "specimen_type_collapsed"){
@@ -498,11 +713,18 @@ do_one_xgb_cv <- function(wet_lab,
   
   train_data %<>% (function(x) transform_data(x,transformation))
   
+  if(transformation %in% c("clr_pseudo_1_ecdf",
+                           "proportion_ecdf")){
+    train_data %<>% ecdf_by_taxon()
+  }
+  
+  
   #center to mean if indicated
   if(transformation == "clr_pseudo_1_diff"|
      transformation == "clr_pseudo_1_diff_scale"|
      transformation == "proportion_diff"|
      transformation == "proportion_diff_scale"){ #subtract specimen-weighted mean
+   sds <- get_sds(train_data,specimens = specimens)
    train_data %<>% (function(x) center_data(transformed_data = x, specimens = specimens))
 
   }
@@ -510,7 +732,7 @@ do_one_xgb_cv <- function(wet_lab,
   #rescale by weighted sd if indicated
   if(transformation == "clr_pseudo_1_diff_scale"|
      transformation == "proportion_diff_scale"){ #divide by specimen-weighted standard deviations
-    train_data %<>% (function(x) rescale_data(transformed_data = x, specimens = specimens))
+    train_data %<>% (function(x) rescale_data(transformed_data = x, spec_sds = sds))
 
   }
   
@@ -616,7 +838,8 @@ do_one_xgb_cv <- function(wet_lab,
               "eta" = cv_results$params$eta,
               "max_depth" = max_depth,
               "cv_results" = cv_results,
-              "all_cv_results" = all_cv_results))
+              "all_cv_results" = all_cv_results,
+              "dry_lab_subset" = dry_lab_subset))
   }
 
 #function to evaluate glmnet performance on training data for one set of parameters
@@ -628,27 +851,22 @@ do_one_glmnet_cv <- function(wet_lab,
                           train_seed,
                           level, 
                           transformation = "proportion",
-                          included_dry_labs){
-  
-  #load libraries
-  library(glmnet)
-  library(magrittr)
-  library(tidyr)
-  library(dplyr)
-  library(RDS)
-  print("mid library")
-  message("mid library")
-  library(data.table)
-  
-  message("haven't failed yet")
+                          included_dry_labs,
+                          dry_lab_subset = NULL){
+
   
   #print wet lab
   print(wet_lab)
+  print(dry_lab_subset)
   
   
   #load wet lab training data
   
   train_data <- readRDS(paste(wet_lab,"_train_",level,"_",train_seed,sep = ""))
+  
+  if(!is.null(dry_lab_subset)){
+    train_data %<>% dplyr::filter(dry_lab %in% dry_lab_subset)
+  }
   
   #collapse human specimen types (following Sinha, et al.)
   if(class_var == "specimen_type_collapsed"){
@@ -673,8 +891,18 @@ do_one_glmnet_cv <- function(wet_lab,
   #construct folds *on aliquots* as xgboost prefers them
   unique_bio_IDs <- train_data$Bioinformatics.ID %>%
     unique
+  if(nfolds != "loocv"){
+    
+  
   num_bio_IDs <- length(unique_bio_IDs)
   folds <- sample(rep(1:nfolds,ceiling(num_bio_IDs/nfolds)),replace = F)[1:num_bio_IDs]
+  } else{ # if loocv, each bioinformatics ID gets its own fold
+    num_bio_IDs <- length(unique_bio_IDs)
+  folds <- 1:num_bio_IDs
+  nfolds <- length(folds)
+    
+  }
+  
   for(k in 1:num_bio_IDs){
     train_data$fold[train_data$Bioinformatics.ID == unique_bio_IDs[k]] <- folds[k]
   }
@@ -697,12 +925,24 @@ do_one_glmnet_cv <- function(wet_lab,
   #transform data to correct scale
   train_data %<>% (function(x) transform_data(x,transformation))
   
+  if(transformation %in% c("clr_pseudo_1_ecdf",
+                           "proportion_ecdf")){
+    train_data %<>% ecdf_by_taxon()
+  }
+  
   #center to mean if indicated
   if(transformation == "clr_pseudo_1_diff"|
      transformation == "clr_pseudo_1_diff_scale"|
      transformation == "proportion_diff"|
      transformation == "proportion_diff_scale"){ #subtract specimen-weighted mean
+    sds <- get_sds(train_data,specimens = specimens)
     train_data %<>% (function(x) center_data(x, specimens))
+  }
+  
+  #rescale by weighted sd if indicated
+  if(transformation == "clr_pseudo_1_diff_scale"|
+     transformation == "proportion_diff_scale"){ #divide by specimen-weighted standard deviations
+    train_data %<>% (function(x) rescale_data(x, spec_sds = sds))
   }
 
   #convert to matrix
@@ -750,7 +990,7 @@ do_one_glmnet_cv <- function(wet_lab,
                           family = 'multinomial',
                           alpha = alpha))
   
-  #assign NA if no convergence
+   #assign NA if no convergence
   if(inherits(cv_results,"try-error")){
     cv_results <- NA
   }
@@ -762,7 +1002,8 @@ do_one_glmnet_cv <- function(wet_lab,
   return(list("wet_lab" = wet_lab,
               "alpha" = alpha,
               "cv_results" = cv_results,
-              "excluded_classes" = class_insuff_data))
+              "excluded_classes" = class_insuff_data,
+              "dry_lab_subset" = dry_lab_subset))
 }
 
 ### calculate sample-centered centered-log-ratio-transformed data
@@ -812,29 +1053,31 @@ do_one_glmnet_train <- function(wet_lab,
                              level,
                              included_wet_labs,
                              included_dry_labs,
-                             transformation = "proportion"){
+                             transformation = "proportion",
+                             dry_lab_subset = NULL){
   
   print(paste("wet lab: ", wet_lab))
   print(paste("class_var: ", class_var))
   print(paste("alpha: ", alpha))
   print(paste("train_seed: ", train_seed))
   print(paste("taxon: ", level))
-  
-  #load libraries
-  library(glmnet)
-  library(magrittr)
-  library(tidyr)
-  library(dplyr)
-  library(RDS)
-  library(data.table)
+
   
   #print wet lab
   print(wet_lab)
+  if(!is.null(dry_lab_subset)){
+  print(paste(c("dry_lab_subset",dry_lab_subset),
+              sep = " ", collapse = " "))
+    }
   
   
   #load wet lab training data
   
   train_data <- readRDS(paste(wet_lab,"_train_",level,"_",train_seed,sep = ""))
+  
+  if(!is.null(dry_lab_subset)){
+    train_data %<>% dplyr::filter(dry_lab %in% dry_lab_subset)
+  }
   
   #collapse human specimen types (following Sinha, et al.)
   if(class_var == "specimen_type_collapsed"){
@@ -865,7 +1108,7 @@ do_one_glmnet_train <- function(wet_lab,
   train_data <- train_data[order(for_order),]
   train_class_label <- sapply(train_data[,class_var,drop = TRUE], function(x) which(unique_classes == x) -1) 
   
-  #construct covariate matrix for xgboost
+  #prep data for glmnet
   specimens <- train_data$specimen
   train_data <- train_data %<>%
     select(starts_with("k__")) %<>%
@@ -874,10 +1117,25 @@ do_one_glmnet_train <- function(wet_lab,
   
   train_data %<>% (function(x) transform_data(x,transformation))
   
+  if(transformation %in% c("clr_pseudo_1_ecdf",
+                           "proportion_ecdf")){
+    train_data %<>% ecdf_by_taxon()
+  }
+  
   #center to mean if indicated
   if(transformation == "clr_pseudo_1_diff"|
-     transformation == "proportion_diff"){ #subtract specimen-weighted mean
+     transformation == "clr_pseudo_1_diff_scale"|
+     transformation == "proportion_diff"|
+     transformation == "proportion_diff_scale"){
+    #subtract specimen-weighted mean
+    sds <- get_sds(train_data,specimens)
     train_data %<>% (function(x) center_data(x, specimens))
+  }
+  
+  #rescale by weighted sd if indicated
+  if(transformation == "clr_pseudo_1_diff_scale"|
+     transformation == "proportion_diff_scale"){ #divide by specimen-weighted standard deviations
+     train_data %<>% (function(x) rescale_data(x, spec_sds = sds))
   }
   
   
@@ -935,6 +1193,11 @@ do_one_glmnet_train <- function(wet_lab,
     print(paste("predicting on", wl,sep = " "))
     test_data <- readRDS(paste(wl,"_test_",level,"_",train_seed,sep = ""))
     
+    
+    if(!is.null(dry_lab_subset)){
+      test_data %<>% dplyr::filter(dry_lab %in% dry_lab_subset)
+    }
+    
     if(class_var == "specimen_type_collapsed"){
       test_data$specimen_type_collapsed %<>%
         (function(x){ x[x=="Fresh"|x=="Freeze-dried"] <- "Human";
@@ -969,18 +1232,24 @@ do_one_glmnet_train <- function(wet_lab,
     #transform data to correct scale
     test_data %<>% (function(x) transform_data(x,transformation))
     
+    if(transformation %in% c("clr_pseudo_1_ecdf",
+                             "proportion_ecdf")){
+      test_data %<>% ecdf_by_taxon()
+    }
+    
     #center to mean if indicated
     if(transformation == "clr_pseudo_1_diff"|
        transformation == "clr_pseudo_1_diff_scale"|
        transformation == "proportion_diff"|
        transformation == "proportion_diff_scale"){ #subtract specimen-weighted mean
+      test_sds <- get_sds(test_data, specimens_test)
       test_data %<>% (function(x) center_data(x, specimens_test))
     }
     
     #rescale by weighted sd if indicated
     if(transformation == "clr_pseudo_1_diff_scale"|
        transformation == "proportion_diff_scale"){ #divide by specimen-weighted standard deviations
-      test_data %<>% (function(x) rescale_data(x, specimens_test))
+       test_data %<>% (function(x) rescale_data(x, test_sds))
     }
     
     
@@ -1016,16 +1285,31 @@ do_one_glmnet_train <- function(wet_lab,
               "glmnet_results" = glmnet_results,
               "glmnet_misclass" = glmnet_misclass,
               "glmnet_preds" = glmnet_predictions,
-              "excluded_classes" = class_insuff_data))
+              "excluded_classes" = class_insuff_data,
+              "dry_lab_subset" = dry_lab_subset))
 }
 
 #function to collect best performing glmnet parameters,
 # train on training sets with them, and predict on all test sets
 train_glmnet <- function(glmnet_params, 
                          included_wet_labs, 
-                         transformation = "proportion"){
-  if((dir.exists(paste("registry_paper_glmnet",transformation, sep = "_"))) &
-     (!dir.exists(paste("registry_glmnet_train",transformation,sep = "_")))){
+                         transformation = "proportion",
+                         queue = "students.q",
+                         dry_lab_subset = NULL){
+  
+  if(is.null(dry_lab_subset)){
+    cv_dir <- paste("registry_paper_glmnet",transformation, sep = "_")
+    train_dir <- paste("registry_glmnet_train",transformation,sep = "_")
+  } else{
+    cv_dir <- paste("registry_paper_glmnet",transformation,
+                    dry_lab_subset, sep = "_")
+    train_dir <- paste("registry_glmnet_train",transformation,
+                       dry_lab_subset, sep = "_")
+  }
+
+  
+  if((dir.exists(cv_dir)) &
+     (!dir.exists(train_dir))){
     
   if(transformation == "lr_pseudo_1"|transformation == "lr_pseudo_halfsmallest"){
     # glmnet_params <- expand.grid(included_wet_labs,
@@ -1053,7 +1337,7 @@ train_glmnet <- function(glmnet_params,
 
   for(i in 1:nglmnet_results ){
     print(paste("glmnet result ", i, " of ", nglmnet_results))
-    job <- try(readRDS(paste("registry_paper_glmnet_",transformation,"/results/",i,".rds",sep = "")))
+    job <- try(readRDS(paste(cv_dir,"/results/",i,".rds",sep = "")))
     if(is.list(job)){
       if(is.list(job$cv_results)){
         glmnet_results$wet_lab[i] <- as.character(job$wet_lab)
@@ -1061,24 +1345,37 @@ train_glmnet <- function(glmnet_params,
         glmnet_results$lambda[i] <- job$cv_results$lambda.min
         glmnet_results$cv[i] <-  (job$cv_results$cvm %>% min)
         glmnet_results$cv_sd[i] <- job$cv_results$cvsd[which.min(job$cv_results$cvm)]
-        print(glmnet_results[i,])
+
       }} else{
-        glmnet_results[i,] <- NA
+        glmnet_results[i,c("lambda","cv","cv_sd")] <- NA
+        glmnet_results$wet_lab[i] <- as.character(job$wet_lab)
+        glmnet_results$alpha[i] <- job$alpha
       }
+    if(glmnet_results[i,"wet_lab"] == ""){
+      glmnet_results[i,"wet_lab"] <- as.character(glmnet_params[i,1])
+      glmnet_results[i,"cv"] <- 100
+    }
+    print(glmnet_results[i,])
   }
+  
   
   glmnet_results$wet_lab %<>% as.character %<>% as.factor
   
+  if(is.null(dry_lab_subset)){
   saveRDS(glmnet_results, file = paste("glmnet_cv_results", transformation, sep = "_",collapse = "_"))
-  
+  } else{
+    saveRDS(glmnet_results, file = paste("glmnet_cv_results", transformation,
+                                         dry_lab_subset,
+                                         sep = "_",collapse = "_"))
+  }
   
   
   ### summarize 10-fold cv results
   best_glmnet <-
     glmnet_results %>%
     group_by(class_var) %>%
-    group_by(wet_lab, add = TRUE) %>%
-    group_by(taxon,add = TRUE) %>%
+    group_by(wet_lab, .add = TRUE) %>%
+    group_by(taxon,.add = TRUE) %>%
     filter(cv == min(cv)) %>%
     summarize(cv = min(cv),
               alpha = paste(unique(alpha[cv == min(cv)]),collapse = "; "))
@@ -1124,6 +1421,7 @@ train_glmnet <- function(glmnet_params,
   print(best_glmnet)
   
    #run only if results not already calculated
+  if(is.null(dry_lab_subset)){
     
     glmnet_train_reg = makeRegistry(file.dir = paste("registry_glmnet_train",transformation,sep = "_"),
                                     packages = c("magrittr",
@@ -1134,6 +1432,19 @@ train_glmnet <- function(glmnet_params,
                                                  "data.table",
                                                  "glmnet"),
                                     source = "all_functions.R")
+  } else{
+    glmnet_train_reg = makeRegistry(file.dir = paste("registry_glmnet_train",
+                                                     transformation,
+                                                     dry_lab_subset, sep = "_"),
+                                    packages = c("magrittr",
+                                                 "xgboost",
+                                                 "tidyr",
+                                                 "dplyr",
+                                                 "RDS",
+                                                 "data.table",
+                                                 "glmnet"),
+                                    source = "all_functions.R")
+    }
     
     options(batchtools.progress = FALSE)
     print(best_glmnet)
@@ -1149,9 +1460,12 @@ train_glmnet <- function(glmnet_params,
              reg = glmnet_train_reg,
              more.args = list(included_wet_labs = included_wet_labs,
                               transformation = transformation,
-                              included_dry_labs = included_dry_labs))
+                              included_dry_labs = included_dry_labs,
+                              dry_lab_subset = dry_lab_subset))
     
-    submitJobs(reg = glmnet_train_reg)
+    submitJobs(reg = glmnet_train_reg,
+               resources = list(memory = "25G",
+                                queue = queue))
     
     
     waitForJobs()
@@ -1159,7 +1473,16 @@ train_glmnet <- function(glmnet_params,
     #delete (large) directory containing cross-validation results
     print(paste("Deleting ", "registry_paper_glmnet_",transformation,
                 " to free memory",sep = ""))
+    
+    if(is.null(dry_lab_subset)){
+
     unlink(paste("registry_paper_glmnet_",transformation,sep = ""), recursive = TRUE)
+    } else{
+        
+      unlink(paste("registry_paper_glmnet_",transformation,
+                   dry_lab_subset,
+                   sep = ""), recursive = TRUE)
+      }
     
   }
   
@@ -1177,6 +1500,7 @@ do_one_xgb_train <- function(wet_lab,
                           level,
                           best_iteration,
                           included_wet_labs,
+                          dry_lab_subset,
                           transformation = "proportion"){
   
   #load libraries
@@ -1189,11 +1513,19 @@ do_one_xgb_train <- function(wet_lab,
   
   #print wet lab
   print(wet_lab)
+  if(!is.null(dry_lab_subset)){
+    print(paste(c("dry_lab_subset",dry_lab_subset),
+                sep = " ", collapse = " "))
+  }
   
   
   #load wet lab training data
   
   train_data <- readRDS(paste(wet_lab,"_train_",level,"_",train_seed,sep = ""))
+  
+  if(!is.null(dry_lab_subset)){
+    train_data %<>% dplyr::filter(dry_lab %in% dry_lab_subset)
+  }
 
   class_var %<>% as.character
   print(class_var)
@@ -1236,18 +1568,24 @@ do_one_xgb_train <- function(wet_lab,
   #convert to proportion-scale data if indicated
   train_data %<>% (function(x) transform_data(x,transformation))
   
+  if(transformation %in% c("clr_pseudo_1_ecdf",
+                           "proportion_ecdf")){
+    train_data %<>% ecdf_by_taxon()
+  }
+  
   #center to mean if indicated
   if(transformation == "clr_pseudo_1_diff"|
      transformation == "clr_pseudo_1_diff_scale"|
      transformation == "proportion_diff"|
      transformation == "proportion_diff_scale"){ #subtract specimen-weighted mean
+    sds <- get_sds(train_data,specimens)
     train_data %<>% (function(x) center_data(x, specimens))
   }
   
   #rescale by weighted sd if indicated
   if(transformation == "clr_pseudo_1_diff_scale"|
      transformation == "proportion_diff_scale"){ #divide by specimen-weighted standard deviations
-    train_data %<>% (function(x) rescale_data(x, specimens))
+    train_data %<>% (function(x) rescale_data(x, sds))
   }
   
   
@@ -1298,6 +1636,10 @@ do_one_xgb_train <- function(wet_lab,
     print(paste("predicting on", wl,sep = " "))
     test_data <- readRDS(paste(wl,"_test_",level,"_",train_seed,sep = ""))
     
+    if(!is.null(dry_lab_subset)){
+      test_data %<>% dplyr::filter(dry_lab %in% dry_lab_subset)
+    }
+    
     if(class_var == "specimen_type_collapsed"){
       test_data$specimen_type_collapsed %<>%
         (function(x){ x[x=="Fresh"|x=="Freeze-dried"] <- "Human";
@@ -1345,18 +1687,26 @@ do_one_xgb_train <- function(wet_lab,
     #transform data to correct scale
     test_data %<>% (function(x) transform_data(x,transformation))
     
+    if(transformation %in% c("clr_pseudo_1_ecdf",
+                             "proportion_ecdf")){
+      test_data %<>% ecdf_by_taxon()
+    }
+    
+    
+    
     #center to mean if indicated
     if(transformation == "clr_pseudo_1_diff"|
        transformation == "clr_pseudo_1_diff_scale"|
        transformation == "proportion_diff"|
        transformation == "proportion_diff_scale"){ #subtract specimen-weighted mean
+      test_sds <- get_sds(test_data,specimens_test)
       test_data %<>% (function(x) center_data(x, specimens_test))
     }
     
     #rescale by weighted sd if indicated
     if(transformation == "clr_pseudo_1_diff_scale"|
        transformation == "proportion_diff_scale"){ #divide by specimen-weighted standard deviations
-      test_data %<>% (function(x) rescale_data(x, specimens_test))
+      test_data %<>% (function(x) rescale_data(x, test_sds))
     }
     
     
@@ -1391,7 +1741,8 @@ do_one_xgb_train <- function(wet_lab,
               "taxon" = level,
               "xgb_results" = xgb_results,
               "xgb_misclass" = xgb_misclass,
-              "xgb_preds" = xgb_predictions))
+              "xgb_preds" = xgb_predictions,
+              "dry_lab_subset" = dry_lab_subset))
 }
 
   
@@ -1402,11 +1753,28 @@ do_one_xgb_train <- function(wet_lab,
 train_xgb <- function(xgb_params,
                       included_wet_labs,
                       transformation = "proportion",
-                      cv_seed = 5466){
+                      cv_seed = 5466,
+                      dry_lab_subset,
+                      resources){
   # check that training registry does not already exist
   # and that ??? registry does exist
-  if((dir.exists(paste("registry_paper_xgb",transformation, sep = "_"))) &
-     (!dir.exists(paste("registry_xgb_train",transformation,sep = "_")))){
+  if(is.null(dry_lab_subset)){
+    cv_dir <- paste("registry_paper_xgb",transformation, sep = "_")
+    train_dir <-paste("registry_xgb_train",transformation,sep = "_")
+  } else{
+    cv_dir <- paste("registry_paper_xgb",transformation,
+                    dry_lab_subset,sep = "_")
+    
+    train_dir <- paste("registry_xgb_train",transformation,
+                       dry_lab_subset, sep = "_")
+  }
+  
+  print(dry_lab_subset)
+  
+  
+  if((dir.exists(cv_dir)) &
+     (!dir.exists(train_dir))){
+    
   nxgb_results <- dim(xgb_params)[1]
   xgb_results <- data.frame(wet_lab = character(nxgb_results ),
                             eta = numeric(nxgb_results),
@@ -1426,7 +1794,7 @@ train_xgb <- function(xgb_params,
   xgb_results$cv %<>% as.numeric()
   xgb_results$subsample %<>% as.numeric()
   for(i in 1:nxgb_results ){
-    job <- try(readRDS(paste("registry_paper_xgb_",transformation,"/results/",i,".rds",sep = "")))
+    job <- try(readRDS(paste(cv_dir,"/results/",i,".rds",sep = "")))
     if(is.list(job)){
       xgb_results$wet_lab[i] <- job$wet_lab
       xgb_results$taxon[i] <- job$level
@@ -1500,9 +1868,9 @@ train_xgb <- function(xgb_params,
 
   
   
-  if(!dir.exists(paste("registry_xgb_train_",transformation, sep = ""))){ #run only if results not already calculated
+  if(!dir.exists(train_dir)){ #run only if results not already calculated
     
-    xgb_train_reg = makeRegistry(file.dir = paste("registry_xgb_train_",transformation, sep = ""),
+    xgb_train_reg = makeRegistry(file.dir = train_dir,
                                  conf.file = "batchtools_multi.conf.R",
                                  packages = c("magrittr",
                                               "xgboost",
@@ -1530,12 +1898,13 @@ train_xgb <- function(xgb_params,
                               transformation = transformation,
                               train_seed = train_seed,
                               max_depth = 6,
-                              cv_seed = cv_seed))
+                              cv_seed = cv_seed,
+                              dry_lab_subset = dry_lab_subset))
     
     
                          
     submitJobs(reg = xgb_train_reg,
-               resources = list(slots = 10))
+               resources = resources)
     
     
     waitForJobs()
@@ -1552,7 +1921,10 @@ train_xgb <- function(xgb_params,
 
 glmnet_cross_validate <-  function(included_wet_labs,
                                    transformation = "proportion",
-                                   cv_seed = 5466){
+                                   cv_seed = 5466,
+                                   nfolds = 10,
+                                   queue = "students.q",
+                                   dry_lab_subset = NULL){
   
   glmnet_params <- expand.grid(included_wet_labs,
                                alpha = seq(0,1, by = .05),
@@ -1567,24 +1939,51 @@ glmnet_cross_validate <-  function(included_wet_labs,
 
   # set up batchtools registry if cross-validation registry does not already exist 
   # and results registry does not already exist
-  if(!(dir.exists(paste("registry_paper_glmnet",transformation, sep = "_"))|
-                  dir.exists(paste("registry_glmnet_train",transformation,sep = "_")))
+  if(is.null(dry_lab_subset)){
+    cv_dir <- paste("registry_paper_glmnet",transformation, sep = "_")
+    train_dir <- paste("registry_glmnet_train",transformation,sep = "_")
+  } else{
+    cv_dir <- paste("registry_paper_glmnet",transformation,
+                    dry_lab_subset,sep = "_")
+    train_dir <- paste("registry_glmnet_train",transformation,
+                       dry_lab_subset,sep = "_")
+  }
+
+  if(!(dir.exists(cv_dir)|
+                  dir.exists(train_dir))
                  ){ #do not run if results already calculated
+    
+    if(is.null(dry_lab_subset)){
     glmnet_reg = makeRegistry(file.dir = paste("registry_paper_glmnet",transformation, sep = "_"),
                               packages = c("magrittr",
                                            "glmnet",
                                            "tidyr",
                                            "dplyr",
-                                           "RDS",
+                                           # "RDS",
                                            "data.table"),
                               source = "all_functions.R")
-  
+    } else{
+      glmnet_reg = makeRegistry(file.dir = paste("registry_paper_glmnet",
+                                                 transformation,
+                                                 dry_lab_subset, sep = "_"),
+                                packages = c("magrittr",
+                                             "glmnet",
+                                             "tidyr",
+                                             "dplyr",
+                                             # "RDS",
+                                             "data.table"),
+                                source = "all_functions.R")
+    
+  }
     
     print(glmnet_params)
     
+    if(is.null(dry_lab_subset)){
     print(paste("registry_paper_glmnet",transformation, sep = "_"))
-
-
+    } else{
+      print(paste("registry_paper_glmnet",transformation,
+                  dry_lab_subset, sep = "_"))
+}
     
     
     
@@ -1594,14 +1993,17 @@ glmnet_cross_validate <-  function(included_wet_labs,
              alpha = as.numeric(glmnet_params[,2]),
              class_var = as.character(glmnet_params[,3]),
              level = as.character(glmnet_params[,4]),
-             more.args = list(nfolds = 10,
-                              cv_seed = cv_seed,
+             more.args = list(cv_seed = cv_seed,
                               train_seed = train_seed,
                               transformation = transformation,
-                              included_dry_labs = included_dry_labs),
+                              included_dry_labs = included_dry_labs,
+                              dry_lab_subset = dry_lab_subset,
+                              nfolds = nfolds),
              reg = glmnet_reg)
     
-    submitJobs(reg = glmnet_reg)
+    submitJobs(reg = glmnet_reg,
+               resources = list(memory = "25G",
+                                queue = queue))
     
     waitForJobs()
     
@@ -1616,28 +2018,30 @@ glmnet_cross_validate <-  function(included_wet_labs,
 # xgboost parameters in parallel via batchtools
 xgb_cross_validate <- function(included_wet_labs,
                                transformation = "proportion",
-                               cv_seed = 5466){
+                               cv_seed = 5466,
+                               nfolds = 10,
+                               dry_lab_subset,
+                               resources){
   
-  xgb_params <- expand.grid(included_wet_labs,
-                            eta = .1,
-                            6,
-                            subsample = c(0.5, 1.0),
-                            colsample_bytree = seq(.25,1,by=.25),
-                            c("specimen","specimen_type_collapsed"),
-                            c("OTU",
-                              "species",
-                              "genus",
-                              "family",
-                              "order",
-                              "class",
-                              "phylum"))
+
   
   
   
   #set up batchtools registry
+  if(is.null(dry_lab_subset)){
+    cv_dir <- paste("registry_paper_xgb",transformation, sep = "_")
+    train_dir <- paste("registry_xgb_train",transformation,sep = "_")
+  } else{
+    cv_dir <- paste("registry_paper_xgb",transformation,
+                    dry_lab_subset,sep = "_")
+    train_dir <- paste("registry_xgb_train",transformation,
+                       dry_lab_subset,sep = "_")
+  }
   
-  if(!dir.exists(paste("registry_paper_xgb",transformation,sep = "_"))){ #do not run if results already calculated
-    xgb_reg = makeRegistry(file.dir = paste("registry_paper_xgb",transformation,sep = "_"),
+  if(!(dir.exists(cv_dir)|
+       dir.exists(train_dir))
+  ){  #do not run if results already calculated
+    xgb_reg = makeRegistry(file.dir = cv_dir,
                            conf.file = "batchtools_multi.conf.R",
                            packages = c("magrittr",
                                         "xgboost",
@@ -1662,16 +2066,17 @@ xgb_cross_validate <- function(included_wet_labs,
              colsample_bytree = as.numeric(xgb_params[,5]),
              class_var = as.character(xgb_params[,6]),
              level = as.character(xgb_params[,7]),
-             more.args = list(nfolds = 10,
+             more.args = list(nfolds = nfolds,
                               cv_seed = cv_seed,
                               train_seed = train_seed,
-                              transformation = transformation),
+                              transformation = transformation,
+                              dry_lab_subset = dry_lab_subset),
              reg = xgb_reg)
     
 
     
     submitJobs(reg = xgb_reg,
-               resources = list(slots = 10))
+               resources = resources)
     
     waitForJobs()
     return("Done with xgboost parameter selection via cross-validation.")
@@ -1683,13 +2088,14 @@ xgb_cross_validate <- function(included_wet_labs,
 ### function to collect results (returns data.frame with misclassification by lab, classification task)
 get_misclass_results <- function(classifier,
                                  transformation,
-                                 directory = NULL){
+                                 directory = NULL,
+                                 nresults = 112){
   preds <- vector(112,mode = 'list')
   to_read <- paste("registry_",classifier,"_train_",transformation,"/results/",sep = "")
   if(!is.null(directory)){
     to_read <- paste(directory,"/",to_read,sep = "")
   }
-  for(i in 1:112){
+  for(i in 1:nresults){
     print(i)
     preds[[i]] <- try(readRDS(paste(to_read,i,".rds",sep="")))
     
@@ -1709,8 +2115,9 @@ get_misclass_results <- function(classifier,
   misclass$classifier %<>% factor(levels = c("Boosted Tree", "Elastic Net"))
   
   if(classifier == "glmnet"){ 
-    for(i in 1:112){
+    for(i in 1:nresults){
       
+      if(is.list(preds[[i]])){
       misclass_new <- with(preds[[i]],
                            
                            data.frame(
@@ -1738,6 +2145,9 @@ get_misclass_results <- function(classifier,
       misclass_new$classifier %<>%  factor(levels = c("Boosted Tree", "Elastic Net"))
       
       misclass <- rbind(misclass,misclass_new)
+      } else{
+        warning(paste("Could not load prediction set ", i, sep = "", collapse = ""))
+      }
       
       
       
@@ -1746,7 +2156,8 @@ get_misclass_results <- function(classifier,
   }
   
   if(classifier == "xgb"){
-    for(i in 1:112){
+    for(i in 1:nresults){
+      if(is.list(preds[[i]])){
       misclass_new <- with(preds[[i]],
                            
                            data.frame(
@@ -1773,6 +2184,9 @@ get_misclass_results <- function(classifier,
       misclass_new$classifier %<>%  factor(levels = c("Boosted Tree", "Elastic Net"))
       
       misclass <- rbind(misclass,misclass_new)
+      } else{
+        warning(paste("Could not load prediction set ", i, sep = "", collapse = ""))
+      }
     }
     
   }

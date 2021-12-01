@@ -7,11 +7,12 @@ rm(list = ls())
 
 # load libraries
 library(xgboost)
+library(glmnet)
 library(magrittr)
 library(Matrix)
 library(tidyr)
 library(dplyr)
-library(RDS)
+# library(RDS)
 library(data.table)
 library(batchtools)
 library(ggplot2)
@@ -19,7 +20,8 @@ library(knitr)
 library(gridExtra)
 library(RColorBrewer)
 
-# source custom functions 
+
+# source custom functions
 source("all_functions.R")
 
 ############################## Extract and Format Data Published in Nature Biotechnology ##############################
@@ -30,19 +32,23 @@ if(!dir.exists("registry_for_mbqc_paper_data_extraction")){
                                                    "glmnet",
                                                    "tidyr",
                                                    "dplyr",
-                                                   "RDS",
+                                                   # "RDS",
+                                                   "readr",
+                                                   "feather",
+                                                   "R.utils",
                                                    "data.table"),
                                       source = "all_functions.R")
-  
+
   batchMap(fun = paper_extractor,
            dummy_var = "hey there",
            reg = paper_extractor_reg)
-  
-  
-  submitJobs(reg = paper_extractor_reg)
-  
+
+
+  submitJobs(reg = paper_extractor_reg,
+             resources = list(memory = "15G"))
+
   waitForJobs()
-  
+
 }
 
 ############################## Extract and Format Data Published at HMP MBQC site ##############################
@@ -54,20 +60,22 @@ if(!dir.exists("registry_for_hmp_site_data_extraction")){
                                                   "tidyr",
                                                   "dplyr",
                                                   "RDS",
+                                                  "R.utils",
                                                   "data.table"),
                                      source = "all_functions.R")
-  
-  
-  
+
+
+
   batchMap(fun = site_extractor,
            dummy_var = "hey there",
            reg = site_extractor_reg)
-  
-  
-  submitJobs(reg = site_extractor_reg)
-  
+
+
+  submitJobs(reg = site_extractor_reg,
+             resources = list(memory = "15G"))
+
   waitForJobs()
-  
+
 }
 
 
@@ -76,98 +84,98 @@ if(!dir.exists("registry_for_hmp_site_data_extraction")){
 # meta_paper_dsc <-
 #   readRDS("mbqc_paper_data_products/meta_only") %>%
 #   data.table
-# 
+#
 # # load metadata extracted from HMP MBQC site via DSC's workflow (also above)
 # meta_site_dsc <-
 #   readRDS("hmp_mbqc_site_data_products/meta_only") %>%
 #   data.table
-# 
-# # load metadata extracted from HMP MBQC site via ADW's workflow (separate code)
-# load("meta_only.RData") #loads object 'meta_only'
-# meta_site_adw <-
-#   meta_only %>%
-#   data.table
-# rm(meta_only)
-# 
+#
+# # # load metadata extracted from HMP MBQC site via ADW's workflow (separate code)
+# # load("meta_only.RData") #loads object 'meta_only'
+# # meta_site_adw <-
+# #   meta_only %>%
+# #   data.table
+# # rm(meta_only)
+#
 # ### Validation steps
-# 
+#
 # #1: check exact equality of 3 extracted data sources
 # if(identical(mp_dsc_dim,ms_dsc_dim)){
 #   print("Paper data (DSC extraction workflow) identical to HMP site data (DSC extraction workflow).")
 # } else{
 #   warning("Paper data (DSC extraction workflow) not identical to HMP site data (DSC extraction workflow).")
 # }
-# 
+#
 # if(identical(mp_dsc_dim,ms_adw_dim)){
 #   print("Paper data (DSC extraction workflow) identical to HMP site data (ADW extraction workflow).")
 # } else{
 #   warning("Paper data (DSC extraction workflow) not identical to HMP site data (ADW extraction workflow).")
 # }
-# 
+#
 # if(identical(ms_dsc_dim,ms_adw_dim)){
 #   print("HMP site data (DSC extraction workflow) identical to HMP site data (ADW extraction workflow).")
 # } else{
 #   warning("HMP site data (DSC extraction workflow) not identical to HMP site data (ADW extraction workflow).")
 # }
-# 
+#
 # #2: check dimensions of data sources
 # mp_dsc_dim <- meta_paper_dsc %>% dim
 # ms_dsc_dim <- meta_site_dsc %>% dim
 # ms_adw_dim <- meta_site_adw %>% dim
-# 
+#
 # #3: check variable names
 # mp_dsc_vars <- meta_paper_dsc %>% colnames
 # ms_dsc_vars <- meta_site_dsc %>% colnames
 # ms_adw_vars <- meta_site_adw %>% colnames
-# 
+#
 # union_vars <- mp_dsc_vars %>% #union of all variable names
 #   (function(x) union(x,ms_dsc_vars)) %>%
 #   (function(x) union(x, ms_adw_vars))
-# 
+#
 # intersect_vars <- mp_dsc_vars %>% #intersection of all variable names
 #   (function(x) intersect(x,ms_dsc_vars)) %>%
 #   (function(x) intersect(x, ms_adw_vars))
-# 
+#
 # unshared_vars <- setdiff(union_vars,intersect_vars)
-# 
+#
 # if(length(unshared_vars) == 0){
 #   print("All data sources contain same variables")
 # } else{
 #   warning(paste("The following variables are not shared between all data sources: \n",
 #               paste(unshared_vars, collapse = " \n")))
 # }
-# 
+#
 # ### Remove variables not shared between all sources
 # mp_dsc_var_remove <- intersect(mp_dsc_vars, unshared_vars)
 # meta_paper_dsc %<>%
-#   select(-!!mp_dsc_var_remove) 
-# 
+#   select(-!!mp_dsc_var_remove)
+#
 # ms_dsc_var_remove <- intersect(ms_dsc_vars, unshared_vars)
 # meta_site_dsc %<>%
-#   select(-!!ms_dsc_var_remove) 
-# 
+#   select(-!!ms_dsc_var_remove)
+#
 # ms_adw_var_remove <- intersect(ms_adw_vars, unshared_vars)
 # meta_site_adw %<>%
-#   select(-!!ms_adw_var_remove) 
-# 
+#   select(-!!ms_adw_var_remove)
+#
 # ### make column order identica
-# meta_paper_dsc %<>% select(!!intersect_vars) 
+# meta_paper_dsc %<>% select(!!intersect_vars)
 # meta_site_dsc %<>% select(!!intersect_vars)
 # meta_site_adw %<>% select(!!intersect_vars)
-# 
+#
 # ### Remove bioinformatics lab 10, which is not mentioned in MBQC paper
 # meta_paper_dsc %<>%
 #   filter(dry_lab != "BL-10") %<>%
 #   data.table
-# 
+#
 # ### Check equality of data tables after removal of BL-10 and non-matching variables
-# 
+#
 # same.unique.vals <- function(datalist, #determine whether variable in arbitary number of
 #                              #data sources has same unique values across sources
 #                          variable){
 #   # get number of data sources in list
 #   n_data <- length(datalist)
-#   # create list of vectors of unique values 
+#   # create list of vectors of unique values
 #   valuelist <- lapply(datalist, function(x)
 #     x %>% select(!!variable) %>% unlist %>% unique)
 #   # get all unique values (aggregating across data sources)
@@ -175,8 +183,8 @@ if(!dir.exists("registry_for_hmp_site_data_extraction")){
 #   # get length of unique value vector
 #   uni_length <- length(uni_values)
 #   # get length of vector of unique values form each data source
-#   length_vec <- sapply(valuelist, length)  
-#   
+#   length_vec <- sapply(valuelist, length)
+#
 #   if(max(length_vec) == min(length_vec)){ #if the max and the min of lengths are equal
 #     if(max(length_vec)==uni_length){ #and equal to number of unique values
 #       return(TRUE) # return true
@@ -186,9 +194,9 @@ if(!dir.exists("registry_for_hmp_site_data_extraction")){
 #   } else{
 #     return(FALSE) # also return false if max != min
 #   }
-#   
+#
 # }
-# 
+#
 # # determine which if any variables have discrepant unique values across data sources
 # colnames(meta_paper_dsc) %>% #all column names are identical, so data source doesn't matter in this line
 #   sapply(function(x) same.unique.vals(list(meta_paper_dsc,
@@ -197,10 +205,10 @@ if(!dir.exists("registry_for_hmp_site_data_extraction")){
 #                  x)) %>%
 #   (function(x) !x) %>%
 #   which()
-# 
-# meta_site_adw %>% 
+#
+# meta_site_adw %>%
 #   with(table(blinded_lab, sequencing_wetlab, useNA = "ifany"))
-#   
+#
 
 
 
@@ -218,11 +226,11 @@ metadata %<>% filter(sequencing_wetlab %in% wet_labs) #filter out NA wet labs
 # from each sequencing wet lab
 num_unique_protocols <- numeric(length(wet_labs))
 for(i in 1:length(wet_labs)){
-  num_unique_protocols[i] <- metadata %>% 
+  num_unique_protocols[i] <- metadata %>%
     filter(pre.extracted_bool == "FALSE") %>%
     filter(sequencing_wetlab == wet_labs[i]) %>%
     filter(
-      ((extraction_wetlab == wet_labs[i]))| 
+      ((extraction_wetlab == wet_labs[i]))|
         (sequencing_wetlab == "HL-F" & extraction_wetlab == "HL-G")) %>%
     dplyr::select(extraction_kit_maker,
            extraction_kit_model,
@@ -249,16 +257,16 @@ for(i in 1:length(wet_labs)){
 if(max(num_unique_protocols) == 1){
   print("Metadata indicates that no sequencing lab ran multiple protocols on non-pre-extracted samples")
 } else{
-  
-  
-  
+
+
+
   metadata$sequencing_wetlab_archived <- metadata$sequencing_wetlab
-  
+
   for(w_l in wet_labs[num_unique_protocols>1]){
-    length_unique <- metadata %>% 
+    length_unique <- metadata %>%
       filter(pre.extracted_bool == "FALSE") %>%
       filter(sequencing_wetlab == w_l) %>%
-      filter((extraction_wetlab == w_l)| 
+      filter((extraction_wetlab == w_l)|
                (sequencing_wetlab == "HL-F" & extraction_wetlab == "HL-G")) %>%
       dplyr::select(extraction_kit_maker,
              extraction_kit_model,
@@ -275,13 +283,13 @@ if(max(num_unique_protocols) == 1){
              thaw_method_processing,
              thaw_method_sequencing,
              X16S_primer,
-             X16S_regions) %>% 
+             X16S_regions) %>%
       apply(2, function(x) length(unique(x)))
-    
-    key_pair <- metadata %>% 
+
+    key_pair <- metadata %>%
       filter(pre.extracted_bool == "FALSE") %>%
       filter(sequencing_wetlab == w_l) %>%
-      filter((extraction_wetlab == w_l)| 
+      filter((extraction_wetlab == w_l)|
                (sequencing_wetlab == "HL-F" & extraction_wetlab == "HL-G")) %>%
       dplyr::select(extraction_kit_maker,
              extraction_kit_model,
@@ -302,33 +310,33 @@ if(max(num_unique_protocols) == 1){
       ) %>%
       dplyr::select(!!which(length_unique>1)[1]) %>% #this works bc max no. of protocols is 2
       ( function(x) list(colnames(x), unique(x)))
-    
-    
-    suffix <-  metadata %>% 
+
+
+    suffix <-  metadata %>%
       filter(pre.extracted_bool == "FALSE") %>%
       filter(sequencing_wetlab == w_l) %>%
-      filter((extraction_wetlab == w_l)| 
+      filter((extraction_wetlab == w_l)|
                (sequencing_wetlab == "HL-F" & extraction_wetlab == "HL-G")) %>%
       dplyr::select(!!key_pair[[1]]) %>%
       apply(2, function(x) sapply(x, function(y) ifelse(y== key_pair[[2]][1,1],
                                                         1,2)))
-    
-    curr_wet_lab <- metadata %>% 
+
+    curr_wet_lab <- metadata %>%
       filter(pre.extracted_bool == "FALSE") %>%
       filter(sequencing_wetlab == w_l) %>%
-      filter((extraction_wetlab == w_l)| 
+      filter((extraction_wetlab == w_l)|
                (sequencing_wetlab == "HL-F" & extraction_wetlab == "HL-G")) %>%
       dplyr::select(sequencing_wetlab) %>%
       unlist()
-    
+
     metadata[(metadata$pre.extracted_bool == "FALSE") &
                (metadata$sequencing_wetlab == w_l) &
                !is.na(metadata$sequencing_wetlab) &
-               !is.na(metadata$pre.extracted_bool),"sequencing_wetlab"] <- 
+               !is.na(metadata$pre.extracted_bool),"sequencing_wetlab"] <-
       paste(curr_wet_lab,suffix,sep="_")
-    
+
     saveRDS(suffix, file = paste(w_l,"suffix",sep="_"))
-    
+
   }
 }
 wet_labs <- metadata %>%
@@ -381,8 +389,8 @@ non_redundant_cols <- which(!(colnames(all_spec_non_preextracted) %in% c("HL-F",
 
 all_spec_non_preextracted <- all_spec_non_preextracted[,non_redundant_cols]
 
-satisfactory <- all_spec_non_preextracted * apply(completeness_non_preextracted, c(1,2), 
-                                                  function(x) as.numeric(x>= .75)) 
+satisfactory <- all_spec_non_preextracted * apply(completeness_non_preextracted, c(1,2),
+                                                  function(x) as.numeric(x>= .75))
 
 ### only consider wet labs that are satisfactory (have sufficiently complete data) for some dry lab
 candidate_wet_labs <- satisfactory %>%
@@ -397,7 +405,7 @@ candidate_dry_labs <- satisfactory %>%
   apply(1, max) %>%
   (function(x) names(x[x>0]))
 
-### function to determine whether a given combination of dry and wet labs 
+### function to determine whether a given combination of dry and wet labs
 ### meet exclusion criteria
 is.satisfactory <- function(wet_labs, dry_labs,satisfaction_matrix){
   ### function to determine whether a given set of wet and dry labs are jointly satisfactory
@@ -532,7 +540,8 @@ if(!dir.exists("registry_for_data_aggregation")){
            reg = agg_reg)
   
   
-  submitJobs(reg = agg_reg)
+  submitJobs(reg = agg_reg,
+             resources = list(memory = "5G"))
   
   waitForJobs()
   
@@ -551,8 +560,111 @@ glmnet_params <- expand.grid(included_wet_labs,
                                "genus",
                                "family",
                                "species"))
+# Parameters for boosted tree (xgb) classifiers
+xgb_params <- expand.grid(included_wet_labs,
+                          eta = .1,
+                          6,
+                          subsample = c(0.5, 1.0),
+                          colsample_bytree = seq(.25,1,by=.25),
+                          c("specimen","specimen_type_collapsed"),
+                          c("OTU",
+                            "species",
+                            "genus",
+                            "family",
+                            "order",
+                            "class",
+                            "phylum"))
 
-print(included_wet_labs)
+
+### sensitivity analyses using data from dry labs individually
+included_wet_labs_archive <- included_wet_labs
+#exclude wet labs with only one aliquot set for sensitivity analysis
+included_wet_labs <- included_wet_labs[!(included_wet_labs %in% 
+                                         c("HL-I","HL-K","HL-L"))]
+glmnet_params_archive <- glmnet_params
+glmnet_params <- glmnet_params %>% dplyr::filter(!(Var1 %in% 
+                                                     c("HL-I","HL-K","HL-L"))) %>%
+  filter(Var3 == "specimen")
+
+xgb_params_archive <- xgb_params
+xgb_params <- xgb_params %>% dplyr::filter(!(Var1 %in% 
+                                                     c("HL-I","HL-K","HL-L"))) %>%
+  filter(Var6 == "specimen")
+for(single_dry_lab in included_dry_labs){
+  glmnet_cross_validate(included_wet_labs, transformation = "proportion_diff",
+                        dry_lab_subset = single_dry_lab,
+                        nfolds = 10)
+  
+  train_glmnet(glmnet_params,
+               included_wet_labs,
+               transformation = "proportion_diff",
+               dry_lab_subset = single_dry_lab)
+  
+  xgb_cross_validate(included_wet_labs,
+                     transformation = "proportion_diff",
+                     dry_lab_subset = single_dry_lab,
+                     resources = list(slots = 10,
+                                      memory = "3G",
+                                      queue = "students.q"))
+  
+  train_xgb(xgb_params, included_wet_labs,
+            transformation = "proportion_diff",
+            dry_lab_subset = single_dry_lab,
+            resources = list(slots = 10,
+                             memory = "3G",
+                             queue = "students.q"))
+  
+  glmnet_cross_validate(included_wet_labs, transformation = "clr_pseudo_1_diff",
+                        dry_lab_subset = single_dry_lab,
+                        nfolds = 10)
+  
+  train_glmnet(glmnet_params,
+               included_wet_labs,
+               transformation = "clr_pseudo_1_diff",
+               dry_lab_subset = single_dry_lab)
+  
+  xgb_cross_validate(included_wet_labs,
+                     transformation = "clr_pseudo_1_diff",
+                     dry_lab_subset = single_dry_lab,
+                     resources = list(slots = 10,
+                                      memory = "3G",
+                                      queue = "students.q"))
+  
+  train_xgb(xgb_params, included_wet_labs,
+            transformation = "clr_pseudo_1_diff",
+            dry_lab_subset = single_dry_lab,
+            resources = list(slots = 10,
+                             memory = "3G",
+                             queue = "students.q"))
+}
+
+included_wet_labs <- included_wet_labs_archive
+glmnet_params <- glmnet_params_archive
+
+
+glmnet_cross_validate(included_wet_labs, transformation = "clr_pseudo_1_diff_scale")
+
+glmnet_cross_validate(included_wet_labs, transformation = "clr_pseudo_1_ecdf")
+
+glmnet_cross_validate(included_wet_labs, transformation = "proportion_diff_scale")
+
+glmnet_cross_validate(included_wet_labs, transformation = "proportion_ecdf")
+
+train_glmnet(glmnet_params,
+             included_wet_labs,
+             transformation = "proportion_diff_scale")
+
+train_glmnet(glmnet_params,
+             included_wet_labs,
+             transformation = "clr_pseudo_1_diff_scale")
+
+train_glmnet(glmnet_params,
+             included_wet_labs,
+             transformation = "proportion_ecdf")
+
+train_glmnet(glmnet_params,
+             included_wet_labs,
+             transformation = "clr_pseudo_1_ecdf")
 
 glmnet_cross_validate(included_wet_labs, transformation = "proportion")
 
@@ -566,6 +678,8 @@ glmnet_cross_validate(included_wet_labs, transformation = "proportion_diff")
 train_glmnet(glmnet_params,
 included_wet_labs,
 transformation = "proportion_diff")
+
+
 
 
 glmnet_cross_validate(included_wet_labs, transformation = "presence")
@@ -588,51 +702,90 @@ train_glmnet(glmnet_params,
 included_wet_labs,
 transformation = "clr_pseudo_1_diff")
 
-# Parameters for boosted tree (xgb) classifiers
-xgb_params <- expand.grid(included_wet_labs,
-                          eta = .1,
-                          6,
-                          subsample = c(0.5, 1.0),
-                          colsample_bytree = seq(.25,1,by=.25),
-                          c("specimen","specimen_type_collapsed"),
-                          c("OTU",
-                            "species",
-                            "genus",
-                            "family",
-                            "order",
-                            "class",
-                            "phylum"))
-
-
-xgb_cross_validate(included_wet_labs,
-                   transformation = "proportion")
-
-train_xgb(xgb_params, included_wet_labs,
-          transformation = "proportion")
 
 
 
 xgb_cross_validate(included_wet_labs,
-                   transformation = "proportion_diff")
+                   transformation = "proportion_diff_scale",
+                   resources = list(slots = 10,
+                                    memory = "3G",
+                                    queue = "students.q"))
 
 train_xgb(xgb_params, included_wet_labs,
-          transformation = "proportion_diff")
+          transformation = "proportion_diff_scale",
+          resources = list(slots = 10,
+               memory = "3G",
+               queue = "students.q"))
+
+
+xgb_cross_validate(included_wet_labs,
+                   transformation = "clr_pseudo_1_diff_scale",
+                   resources = list(slots = 10,
+                                    memory = "3G",
+                                    queue = "students.q"))
+
+train_xgb(xgb_params, included_wet_labs,
+          transformation = "clr_pseudo_1_diff_scale",
+          resources = list(slots = 10,
+                           memory = "3G",
+                           queue = "students.q"))
+
+
+xgb_cross_validate(included_wet_labs,
+                   transformation = "proportion",
+                   resources = list(slots = 10,
+                                    memory = "3G",
+                                    queue = "students.q"))
+
+train_xgb(xgb_params, included_wet_labs,
+          transformation = "proportion",
+          resources = list(slots = 10,
+                           memory = "3G",
+                           queue = "students.q"))
 
 
 
 xgb_cross_validate(included_wet_labs,
-                   transformation = "clr_pseudo_1")
+                   transformation = "proportion_diff",
+                   resources = list(slots = 10,
+                                    memory = "3G",
+                                    queue = "students.q"))
 
 train_xgb(xgb_params, included_wet_labs,
-          transformation = "clr_pseudo_1")
+          transformation = "proportion_diff",
+          resources = list(slots = 10,
+                           memory = "3G",
+                           queue = "students.q"))
 
 
 
 xgb_cross_validate(included_wet_labs,
-                   transformation = "clr_pseudo_1_diff")
+                   transformation = "clr_pseudo_1",
+                   resources = list(slots = 10,
+                                    memory = "3G",
+                                    queue = "students.q"))
 
 train_xgb(xgb_params, included_wet_labs,
-          transformation = "clr_pseudo_1_diff")
+          transformation = "clr_pseudo_1",
+          resources = list(slots = 10,
+                           memory = "3G",
+                           queue = "students.q"))
+
+
+
+xgb_cross_validate(included_wet_labs,
+                   transformation = "clr_pseudo_1_diff",
+                   resources = list(slots = 10,
+                                    memory = "3G",
+                                    queue = "students.q"))
+
+train_xgb(xgb_params, included_wet_labs,
+          transformation = "clr_pseudo_1_diff",
+          resources = list(slots = 10,
+                           memory = "3G",
+                           queue = "students.q"))
+
+
 
 
 
@@ -646,11 +799,14 @@ train_xgb(xgb_params, included_wet_labs,
 ############################## Collect Results ##############################
 
 
-misclass_glmnet <- lapply(c("proportion_diff","clr_pseudo_1_diff",
-                         "presence"),
+misclass_glmnet <- lapply(c("proportion_diff", #"proportion_diff_scale",
+                            "clr_pseudo_1_diff", #"clr_pseudo_1_diff_scale",
+                            "presence"),
                        function(x) get_misclass_results("glmnet",x))
 
-misclass_xgb <- lapply(c("proportion_diff","clr_pseudo_1_diff","presence"),
+misclass_xgb <- lapply(c("proportion_diff", #"proportion_diff_scale",
+                         "clr_pseudo_1_diff", #"clr_pseudo_1_diff_scale",
+                         "presence"),
                        function(x) get_misclass_results("xgb",x))
 
 
@@ -664,10 +820,16 @@ misclass$cross_lab <- (as.character(misclass$predictor_lab) ==
                          as.character(misclass$predictee_lab)) %>%
   sapply(function(x) ifelse(x,"Within Lab","Cross Lab"))
 # #
+misclass$class_var[misclass$class_var == "specimen"] <- "Specimen"
+misclass$class_var[misclass$class_var == "specimen_type_collapsed"] <- "Specimen Type"
 levels(misclass$class_var) <- c("Specimen", "Specimen Type")
+
+misclass$predictee_lab %<>% as.factor()
+misclass$predictor_lab %<>% as.factor()
 
 levels(misclass$predictor_lab)[levels(misclass$predictor_lab)  == "HL-F_1"] <- "HL-F"
 levels(misclass$predictee_lab)[levels(misclass$predictee_lab)  == "HL-F_1"] <- "HL-F"
+
 
 ############################## Collect Classification Results Quoted in Text ##############################
 
@@ -733,6 +895,57 @@ misclass %>%
             q1_misclass = quantile(misclass,.25),
             q3_misclass = quantile(misclass,.75)) %>% View()
 
+### 3.1A
+
+# specimen and specimen type median within lab
+misclass %>%
+  filter(transformation == "proportion_diff_scale") %>%
+  filter(cross_lab == "Within Lab") %>%
+  group_by(class_var, classifier) %>%
+  summarize(median_misclass = median(misclass),
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75))
+# specimen and specimen type median within lab by taxon
+misclass %>%
+  filter(transformation == "proportion_diff_scale") %>%
+  filter(cross_lab == "Within Lab") %>%
+  filter(class_var == "Specimen") %>%
+  group_by(class_var, classifier, taxon) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75)) %>% View
+
+### 3.1.1
+
+# within and across lab for boosted tree and elastic net, averaged across taxa
+misclass %>%
+  filter(transformation == "proportion_diff_scale") %>%
+  filter(class_var == "Specimen") %>%
+  group_by(classifier, cross_lab) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75))
+
+# within and across by taxon (OTU and phylum)
+misclass %>%
+  filter(transformation == "proportion_diff_scale") %>%
+  filter(class_var == "Specimen") %>%
+  filter(taxon %in% c("OTU","phylum")) %>%
+  group_by(classifier, taxon, cross_lab) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75)) %>% View()
+
+# within and across by taxon (species)
+misclass %>%
+  filter(transformation == "proportion_diff_scale") %>%
+  filter(class_var == "Specimen") %>%
+  filter(taxon %in% c("species")) %>%
+  group_by(classifier, taxon, cross_lab) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75)) %>% View()
+
 ### 3.2
 
 # specimen median within and across lab
@@ -757,6 +970,37 @@ misclass %>%
 #within and across by classifier at species level
 misclass %>%
   filter(transformation == "clr_pseudo_1_diff") %>%
+  filter(class_var == "Specimen") %>%
+  filter(taxon %in% c("species")) %>%
+  group_by(classifier, taxon, cross_lab) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75)) %>% View()
+
+### 3.2A
+
+# specimen median within and across lab
+misclass %>%
+  filter(transformation == "clr_pseudo_1_diff_scale") %>%
+  filter(class_var == "Specimen") %>% 
+  group_by(cross_lab, classifier) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75))
+
+# within and across by taxon (OTU and phylum)
+misclass %>%
+  filter(transformation == "clr_pseudo_1_diff_scale") %>%
+  filter(class_var == "Specimen") %>%
+  filter(taxon %in% c("OTU","phylum")) %>%
+  group_by(classifier, taxon, cross_lab) %>%
+  summarize(median_misclass = median(misclass), 
+            q1_misclass = quantile(misclass,.25),
+            q3_misclass = quantile(misclass,.75)) %>% View()
+
+#within and across by classifier at species level
+misclass %>%
+  filter(transformation == "clr_pseudo_1_diff_scale") %>%
   filter(class_var == "Specimen") %>%
   filter(taxon %in% c("species")) %>%
   group_by(classifier, taxon, cross_lab) %>%
@@ -870,10 +1114,27 @@ misclass %>%
 
 dev.off()
 
-pdf(width = 6, height = 3, file = "proportion_all.pdf")
+misclass$transformation %<>% factor(levels = c("proportion_diff",
+                                                  "clr_pseudo_1_diff",
+                                                  "presence"))
+misclass$classifier %<>% factor(levels = c("Elastic Net",
+                                          "Boosted Tree"))
+
+results.names <- c('Boosted Tree.proportion_diff' = "Proportion (Centered) \nBoosted Tree",
+                   'Elastic Net.proportion_diff' = "Proportion (Centered) \nElastic Net",
+                   'Boosted Tree.clr_pseudo_1_diff' = "CLR (Centered) \nBoosted Tree",
+                   'Elastic Net.clr_pseudo_1_diff' = "CLR (Centered) \nElastic Net",
+                   'OTU' = "OTU",
+                   'genus' = "Genus",
+                   'order' = "Order",
+                   'phylum' = "Phylum")
+                   
+
+
+pdf(width = 6, height = 4.5, file = "results_all.pdf")
 ggplot() +
   geom_point(data = misclass %>%
-               filter(transformation == c("proportion_diff")) %>%
+               filter(transformation %in% c("proportion_diff","clr_pseudo_1_diff")) %>%
                filter(class_var == "Specimen") %>%
                filter(taxon %in% c("OTU","genus","order","phylum")) %>%
                # filter(classifier == "Boosted Tree") %>%
@@ -890,7 +1151,7 @@ ggplot() +
                  alpha = cross_lab),
              size = .5) +
   geom_line(data = misclass %>%
-              filter(transformation == c("proportion_diff")) %>%
+              filter(transformation %in% c("proportion_diff","clr_pseudo_1_diff")) %>%
               filter(class_var == "Specimen") %>%
               # filter(taxon == "OTU") %>%
               # filter(classifier  == "Boosted Tree") %>%
@@ -911,10 +1172,11 @@ ggplot() +
   scale_alpha_discrete(range = c(.75,1)) +
   coord_cartesian(ylim= c(0,1)) +
   ylab("Misclassification") +
-  xlab("Predictor Laboratory") +
-  facet_grid(classifier ~ taxon) +
+  xlab("Training Laboratory") +
+  facet_grid(interaction(classifier,transformation) ~ taxon,
+             labeller = as_labeller(results.names)) +
   # ggtitle("Proportion-Scale Specimen Classifier Performance by Taxon") +
-  guides(color = guide_legend(title = "Predictee Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+  guides(color = guide_legend(title = "Test Laboratory", nrow = 4, byrow = 4, title.position = "top"),
          shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
                               override.aes = list(linetype  = 0)),
          size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
@@ -925,6 +1187,103 @@ ggplot() +
   theme(axis.text.x=element_text(angle = 45, hjust = 1),
         plot.title = element_text(size = 8))
 dev.off()
+
+##### Proportion Difference-Scale Figures
+
+misclass$predictor_lab %<>%
+  as.character() %<>%
+  factor(levels =
+           as.character(misclass %>%
+                          # filter(taxon == "phylum") %>%
+                          filter(class_var == "Specimen") %>%
+                          filter(transformation == "proportion_diff_scale") %>%
+                          filter(cross_lab == "Within Lab") %>%
+                          group_by(predictor_lab) %>%
+                          summarize(mean_within = mean(misclass)) %>%
+                          with(predictor_lab[order(mean_within)]) %>%
+                          as.character()
+           )
+  )
+
+pdf(width = 4, height = 2, file = "proportion_scale_within.pdf")
+misclass %>%
+  filter(transformation == "proportion_diff_scale") %>%
+  filter(cross_lab == "Within Lab") %>%
+  # filter(classifier == "Boosted Tree") %>%
+  ggplot(aes(x = taxon, y = misclass,
+             color = predictee_lab,
+             group = predictee_lab)) +
+  geom_point(size = .5) +
+  geom_line(size = .3) +
+  facet_grid(classifier~class_var, scales = "free_y") +
+  theme_bw(base_size = 8) +
+  scale_color_brewer(palette = "Dark2") +
+  guides(color = guide_legend(title = "Handling Laboratory",nrow = 4, byrow = 4, title.position="top")) +
+  theme(axis.text.x=element_text(angle = 45, hjust = 1),
+        # legend.position = "bottom",
+        plot.title = element_text(size = 8)
+        
+  ) +
+  ylab("Within-Laboratory \nMisclassification") +
+  xlab("Taxon")
+
+dev.off()
+
+# pdf(width = 6, height = 3, file = "proportion_scale_all.pdf")
+# ggplot() +
+#   geom_point(data = misclass %>%
+#                filter(transformation == c("proportion_diff_scale")) %>%
+#                filter(class_var == "Specimen") %>%
+#                filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+#                # filter(classifier == "Boosted Tree") %>%
+#                # filter(taxon == "genus") %>%
+#                # filter(cross_lab == "Within Lab") %>%
+#                mutate(grouper = paste(classifier,predictee_lab,
+#                                       sep = "_",
+#                                       collapse = "_")),
+#              aes(x= predictor_lab,
+#                  y = misclass,
+#                  color = predictee_lab,
+#                  shape = cross_lab,
+#                  size = cross_lab,
+#                  alpha = cross_lab),
+#              size = .5) +
+#   geom_line(data = misclass %>%
+#               filter(transformation == c("proportion_diff_scale")) %>%
+#               filter(class_var == "Specimen") %>%
+#               # filter(taxon == "OTU") %>%
+#               # filter(classifier  == "Boosted Tree") %>%
+#               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+#               filter(as.character(predictor_lab) != as.character(predictee_lab)) %>%
+#               mutate(grouper = paste(predictee_lab,
+#                                      sep = "_",
+#                                      collapse = "_")),
+#             aes(x = predictor_lab,
+#                 y = misclass,
+#                 color = predictee_lab,
+#                 group = predictee_lab,
+#                 alpha = cross_lab),
+#             size= .3
+#   ) +
+#   scale_color_brewer(palette = "Dark2") +
+#   scale_size_discrete(range = c(1,2)) +
+#   scale_alpha_discrete(range = c(.75,1)) +
+#   coord_cartesian(ylim= c(0,1)) +
+#   ylab("Misclassification") +
+#   xlab("Predictor Laboratory") +
+#   facet_grid(classifier ~ taxon) +
+#   # ggtitle("Proportion-Scale Specimen Classifier Performance by Taxon") +
+#   guides(color = guide_legend(title = "Predictee Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+#          shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                               override.aes = list(linetype  = 0)),
+#          size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                              override.aes = list(linetype  = 0)),
+#          alpha = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                               override.aes = list(linetype  = 0))) +
+#   theme_bw(base_size = 8) +
+#   theme(axis.text.x=element_text(angle = 45, hjust = 1),
+#         plot.title = element_text(size = 8))
+# dev.off()
 
 ##### CLR Difference Figures
 
@@ -946,61 +1305,138 @@ misclass$predictor_lab %<>%
 color_tab <- color_tab[order(levels(misclass$predictor_lab), decreasing = FALSE),]
 
 # 
-pdf(width = 6, height = 3, file = "clr_all.pdf")
-ggplot() +
-  geom_point(data = misclass %>%
-               filter(transformation == c("clr_pseudo_1_diff")) %>%
-               filter(class_var == "Specimen") %>%
-               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
-               # filter(classifier == "Boosted Tree") %>%
-               # filter(taxon == "genus") %>%
-               # filter(cross_lab == "Within Lab") %>%
-               mutate(grouper = paste(classifier,predictee_lab,
-                                      sep = "_",
-                                      collapse = "_")),
-             aes(x= predictor_lab,
-                 y = misclass,
-                 color = predictee_lab,
-                 shape = cross_lab,
-                 size = cross_lab,
-                 alpha = cross_lab),
-             size = .5) +
-  geom_line(data = misclass %>%
-              filter(transformation == c("clr_pseudo_1_diff")) %>%
-              filter(class_var == "Specimen") %>%
-              # filter(taxon == "OTU") %>%
-              # filter(classifier  == "Boosted Tree") %>%
-              filter(taxon %in% c("OTU","genus","order","phylum")) %>%
-              filter(predictor_lab != predictee_lab) %>%
-              mutate(grouper = paste(predictee_lab,
-                                     sep = "_",
-                                     collapse = "_")),
-            aes(x = predictor_lab,
-                y = misclass,
-                color = predictee_lab,
-                group = predictee_lab,
-                alpha = cross_lab),
-            size = .3
-  ) +
-  scale_color_brewer(palette = "Dark2") +
-  scale_size_discrete(range = c(1,2)) +
-  scale_alpha_discrete(range = c(.75,1)) +
-  coord_cartesian(ylim= c(0,1)) +
-  ylab("Misclassification") +
-  xlab("Predictor Laboratory") +  
-  # ggtitle("Log-Ratio-Scale Specimen Classifier Performance by Taxon") +
-  facet_grid(classifier ~ taxon) +
-  guides(color = guide_legend(title = "Predictee Laboratory", nrow = 4, byrow = 4, title.position = "top"),
-         shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
-                              override.aes = list(linetype  = 0)),
-         size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
-                             override.aes = list(linetype  = 0)),
-         alpha = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
-                              override.aes = list(linetype  = 0)))  +
-  theme_bw(base_size = 8) +
-  theme(axis.text.x=element_text(angle = 45, hjust = 1),
-        plot.title = element_text(size = 8))
-dev.off()
+# pdf(width = 6, height = 3, file = "clr_all.pdf")
+# ggplot() +
+#   geom_point(data = misclass %>%
+#                filter(transformation == c("clr_pseudo_1_diff")) %>%
+#                filter(class_var == "Specimen") %>%
+#                filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+#                # filter(classifier == "Boosted Tree") %>%
+#                # filter(taxon == "genus") %>%
+#                # filter(cross_lab == "Within Lab") %>%
+#                mutate(grouper = paste(classifier,predictee_lab,
+#                                       sep = "_",
+#                                       collapse = "_")),
+#              aes(x= predictor_lab,
+#                  y = misclass,
+#                  color = predictee_lab,
+#                  shape = cross_lab,
+#                  size = cross_lab,
+#                  alpha = cross_lab),
+#              size = .5) +
+#   geom_line(data = misclass %>%
+#               filter(transformation == c("clr_pseudo_1_diff")) %>%
+#               filter(class_var == "Specimen") %>%
+#               # filter(taxon == "OTU") %>%
+#               # filter(classifier  == "Boosted Tree") %>%
+#               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+#               filter(predictor_lab != predictee_lab) %>%
+#               mutate(grouper = paste(predictee_lab,
+#                                      sep = "_",
+#                                      collapse = "_")),
+#             aes(x = predictor_lab,
+#                 y = misclass,
+#                 color = predictee_lab,
+#                 group = predictee_lab,
+#                 alpha = cross_lab),
+#             size = .3
+#   ) +
+#   scale_color_brewer(palette = "Dark2") +
+#   scale_size_discrete(range = c(1,2)) +
+#   scale_alpha_discrete(range = c(.75,1)) +
+#   coord_cartesian(ylim= c(0,1)) +
+#   ylab("Misclassification") +
+#   xlab("Predictor Laboratory") +  
+#   # ggtitle("Log-Ratio-Scale Specimen Classifier Performance by Taxon") +
+#   facet_grid(classifier ~ taxon) +
+#   guides(color = guide_legend(title = "Predictee Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+#          shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                               override.aes = list(linetype  = 0)),
+#          size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                              override.aes = list(linetype  = 0)),
+#          alpha = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                               override.aes = list(linetype  = 0)))  +
+#   theme_bw(base_size = 8) +
+#   theme(axis.text.x=element_text(angle = 45, hjust = 1),
+#         plot.title = element_text(size = 8))
+# dev.off()
+
+##### CLR Difference-Scale Figures
+
+misclass$predictor_lab %<>%
+  as.character() %<>%
+  factor(levels =
+           as.character(misclass %>%
+                          # filter(taxon == "phylum") %>%
+                          filter(class_var == "Specimen") %>%
+                          filter(transformation == "clr_pseudo_1_diff_scale") %>%
+                          filter(cross_lab == "Within Lab") %>%
+                          group_by(predictor_lab) %>%
+                          summarize(mean_within = mean(misclass)) %>%
+                          with(predictor_lab[order(mean_within)]) %>%
+                          as.character()
+           )
+  )
+
+color_tab <- color_tab[order(levels(misclass$predictor_lab), decreasing = FALSE),]
+
+# 
+# pdf(width = 6, height = 3, file = "clr_scale_all.pdf")
+# ggplot() +
+#   geom_point(data = misclass %>%
+#                filter(transformation == c("clr_pseudo_1_diff_scale")) %>%
+#                filter(class_var == "Specimen") %>%
+#                filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+#                # filter(classifier == "Boosted Tree") %>%
+#                # filter(taxon == "genus") %>%
+#                # filter(cross_lab == "Within Lab") %>%
+#                mutate(grouper = paste(classifier,predictee_lab,
+#                                       sep = "_",
+#                                       collapse = "_")),
+#              aes(x= predictor_lab,
+#                  y = misclass,
+#                  color = predictee_lab,
+#                  shape = cross_lab,
+#                  size = cross_lab,
+#                  alpha = cross_lab),
+#              size = .5) +
+#   geom_line(data = misclass %>%
+#               filter(transformation == c("clr_pseudo_1_diff_scale")) %>%
+#               filter(class_var == "Specimen") %>%
+#               # filter(taxon == "OTU") %>%
+#               # filter(classifier  == "Boosted Tree") %>%
+#               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+#               filter(as.character(predictor_lab) != as.character(predictee_lab)) %>%
+#               mutate(grouper = paste(predictee_lab,
+#                                      sep = "_",
+#                                      collapse = "_")),
+#             aes(x = predictor_lab,
+#                 y = misclass,
+#                 color = predictee_lab,
+#                 group = predictee_lab,
+#                 alpha = cross_lab),
+#             size = .3
+#   ) +
+#   scale_color_brewer(palette = "Dark2") +
+#   scale_size_discrete(range = c(1,2)) +
+#   scale_alpha_discrete(range = c(.75,1)) +
+#   coord_cartesian(ylim= c(0,1)) +
+#   ylab("Misclassification") +
+#   xlab("Predictor Laboratory") +  
+#   # ggtitle("Log-Ratio-Scale Specimen Classifier Performance by Taxon") +
+#   facet_grid(classifier ~ taxon) +
+#   # facet_grid(. ~ taxon) +
+#   guides(color = guide_legend(title = "Predictee Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+#          shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                               override.aes = list(linetype  = 0)),
+#          size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                              override.aes = list(linetype  = 0)),
+#          alpha = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
+#                               override.aes = list(linetype  = 0)))  +
+#   theme_bw(base_size = 8) +
+#   theme(axis.text.x=element_text(angle = 45, hjust = 1),
+#         plot.title = element_text(size = 8))
+# dev.off()
 
 ##### Presence-Absence Figures
 
@@ -1061,10 +1497,10 @@ ggplot() +
   scale_alpha_discrete(range = c(.75,1)) +
   coord_cartesian(ylim= c(0,1)) +
   ylab("Misclassification") +
-  xlab("Predictor Laboratory") +  
+  xlab("Training Laboratory") +  
   facet_grid(classifier ~ taxon) +
   # ggtitle("Presence-Scale Specimen Classifier Performance by Taxon") +
-  guides(color = guide_legend(title = "Predictee Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+  guides(color = guide_legend(title = "Test Laboratory", nrow = 4, byrow = 4, title.position = "top"),
          shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
                               override.aes = list(linetype  = 0)),
          size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
@@ -1082,12 +1518,20 @@ dev.off()
 misclass_pretty <- misclass
 
 misclass_pretty$transformation %<>% sapply(function(x) ifelse(x == "clr_pseudo_1_diff","CLR (Centered)",
+                                                              ifelse(x == "clr_pseudo_1_diff_scale","CLR (Centered, Scaled)",
                                                               ifelse(x == "proportion_diff","Proportion (Centered)",
-                                                                     "Presence-Absence")))
+                                                              ifelse(x == "proportion_diff_scale", "Proportion (Centered, Scaled)",
+                                                              ifelse(x == "proportion_ecdf","Proportion (Empirical CDF)",
+                                                              ifelse(x == "clr_pseudo_1_ecdf","CLR (Empirical CDF)",
+                                                                     "Presence-Absence")))))))
 
 misclass_pretty$transformation  <- factor(misclass_pretty$transformation,
                                           levels = c("Proportion (Centered)",
+                                                     "Proportion (Centered, Scaled)",
+                                                     "Proportion (Empirical CDF)",
                                                      "CLR (Centered)",
+                                                     "CLR (Centered, Scaled)",
+                                                     "CLR (Empirical CDF)",
                                                      "Presence-Absence"))
 
 
@@ -1097,6 +1541,7 @@ misclass_pretty$grouper <-
 
 pdf(width = 6, height = 3, file = "median_misclass.pdf")
 misclass_pretty %>%
+  filter(transformation %in% c("Proportion (Centered)","CLR (Centered)")) %>%
   group_by %>%
   group_by(transformation, class_var, taxon, cross_lab, classifier) %>%
   summarize(median_misclass = median(misclass),
@@ -1110,7 +1555,8 @@ misclass_pretty %>%
   # data = misclass_pretty) +
   geom_line(aes(x = taxon, y = misclass, color = cross_lab, linetype = classifier,
                 group = interaction(predictee_lab, predictor_lab, classifier)), alpha = .2, size = .2,
-              data = misclass_pretty) +
+              data = misclass_pretty %>%
+              filter(transformation %in% c("Proportion (Centered)","CLR (Centered)"))) +
   geom_line(aes(x = taxon, y = median_misclass, group = interaction(cross_lab, classifier), color = cross_lab,
                 linetype = classifier),
             alpha = 1,
@@ -1148,7 +1594,7 @@ misclass_pretty %>%
   ylab("Misclassification Error") +
   xlab("Taxon") +
   guides(linetype = guide_legend(title = "Type of Prediction",nrow = 2, byrow = 2, title.position="top"),
-         color = guide_legend(title = "Predictee Laboratory",nrow = 2, byrow = 2, title.position="top")) 
+         color = guide_legend(title = "Test Laboratory",nrow = 2, byrow = 2, title.position="top")) 
 dev.off()
 
 
@@ -1245,10 +1691,10 @@ misclass_data$predictor_lab %<>%
     scale_alpha_discrete(range = c(.75,1)) +
     coord_cartesian(ylim= c(0,1)) +
     ylab("Misclassification") +
-    xlab("Predictor Laboratory") +
+    xlab("Training Laboratory") +
     facet_grid(classifier ~ taxon) +
     # ggtitle("Proportion-Scale Specimen Classifier Performance by Taxon") +
-    guides(color = guide_legend(title = "Predictee Laboratory", nrow = 2, byrow = 2, title.position = "top"),
+    guides(color = guide_legend(title = "Test Laboratory", nrow = 2, byrow = 2, title.position = "top"),
            shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
                                 override.aes = list(linetype  = 0)),
            size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top",
@@ -1326,6 +1772,7 @@ misclass_pretty %>%
   xlab("Taxon") + 
   scale_shape_manual(values = c(4,1))+
   theme(axis.text.x=element_text(angle = 45, hjust = 1),
+        text = element_text(size = 15),
         legend.position = "bottom"
   ) +
   guides(color = guide_legend(title = "Type of Prediction",nrow = 1, byrow = 1, title.position="top"),
@@ -1382,6 +1829,7 @@ misclass_pretty %>%
   guides(color = guide_legend(title = "Type of Prediction",nrow = 1, byrow = 1, title.position="top"),
          linetype = guide_legend(title = "Centering",nrow = 1, byrow = 1, title.position="top"))
 dev.off()
+
 
 
 
@@ -1739,3 +2187,494 @@ lps_hll %>%
   ylab("Linear Predictor Components on Training Set") +
   xlab("Linear Predictor Components on Test Set")
 dev.off()
+
+
+
+######## Sensitivity Analysis: Classification using Dry Labs Individually ########
+
+### get sensitivity analysis results
+dl_results <- vector(8, mode = "list")
+
+### sensitivity analyses using data from dry labs individually
+included_wet_labs_archive <- included_wet_labs
+#exclude wet labs with only one aliquot set for sensitivity analysis
+included_wet_labs <- included_wet_labs[!(included_wet_labs %in% 
+                                           c("HL-I","HL-K","HL-L"))]
+glmnet_params_archive <- glmnet_params
+glmnet_params <- glmnet_params %>% dplyr::filter(!(Var1 %in% 
+                                                     c("HL-I","HL-K","HL-L"))) %>%
+  filter(Var3 == "specimen")
+
+xgb_params_archive <- xgb_params
+xgb_params <- xgb_params %>% dplyr::filter(!(Var1 %in% 
+                                               c("HL-I","HL-K","HL-L"))) %>%
+  filter(Var6 == "specimen")
+
+counter <- 0
+for(dl in included_dry_labs){
+  for(transformation in c("proportion_diff","clr_pseudo_1_diff")){
+    counter <- counter + 1
+    temp_result <- get_misclass_results("glmnet",
+                                        paste(transformation,dl,sep = "_",
+                                              collapse = "_"),
+                                        nresults = 70)
+    temp_result$dry_lab <- dl
+    dl_results[[counter]] <- temp_result
+  }
+}
+
+dl_results <- do.call(rbind,dl_results)
+dl_results$transformation <- sapply(dl_results$transformation,
+                                    function(x) ifelse(grepl("proportion",
+                                                             x,
+                                                             fixed = TRUE),
+                                    "Proportion (Centered)",
+                                    "CLR (Centered)"))
+
+dl_results$same_lab <- as.character(dl_results$predictor_lab) ==
+  as.character(dl_results$predictee_lab)
+dl_results$same_lab <- sapply(dl_results$same_lab,
+                              function(x) ifelse(x,
+                                                 "Within Laboratory",
+                                                 "Across Laboratory"))
+
+dl_results$traintest <- apply(dl_results,1,
+                              function(x) paste(c(x["predictor_lab"],
+                                                x["predictee_lab"]),
+                                                sep = "_",
+                                                collapse = "_"))
+
+dl_results$predictor_lab %<>% factor(levels = c("HL-J",
+                                                "HL-H",
+                                                "HL-F_1",
+                                                "HL-B",
+                                                "HL-C"))
+levels(dl_results$predictor_lab)[levels(dl_results$predictor_lab) == "HL-F_1"] <- 
+  "HL-F"
+
+misclass_dl <- misclass %>%
+  filter(classifier == "Elastic Net") %>%
+  filter(predictee_lab %in% c("HL-J","HL-H", "HL-F","HL-B",
+                              "HL-C")) %>%
+  filter(predictor_lab %in% c("HL-J","HL-H", "HL-F","HL-B",
+                              "HL-C")) %>%
+  filter(class_var == "Specimen") %>%
+  filter(transformation %in% c("proportion_diff",
+                               "clr_pseudo_1_diff")) %>%
+  mutate(dry_lab = "All") %>%
+  mutate(same_lab = sapply(cross_lab,
+                           function(x) ifelse(x == "Within Lab",
+                                              "Within Laboratory",
+                                              "Across Laboratory"))) %>%
+  select(-cross_lab)
+
+misclass_dl$class_var <- "specimen"
+
+misclass_dl$transformation <- sapply(misclass_dl$transformation,
+                                    function(x) ifelse(grepl("proportion_diff",
+                                                             x,
+                                                             fixed = TRUE),
+                                                       "Proportion (Centered)",
+                                                       "CLR (Centered)"))
+
+misclass_dl <- rbind(misclass_dl %>% mutate(dry_lab = "BL-2"),
+                     misclass_dl %>% mutate(dry_lab = "BL-4"),
+                     misclass_dl %>% mutate(dry_lab = "BL-6"),
+                     misclass_dl %>% mutate(dry_lab = "BL-8")
+                     )
+
+misclass_dl$traintest <- apply(misclass_dl,1,
+                              function(x) paste(c(x["predictor_lab"],
+                                                  x["predictee_lab"]),
+                                                sep = "_",
+                                                collapse = "_"))
+
+misclass_dl$predictor_lab %<>% factor(levels = c("HL-J",
+                                                "HL-H",
+                                                "HL-F",
+                                                "HL-B",
+                                                "HL-C"))
+
+misclass_dl$predictee_lab %<>% factor(levels = c("HL-J",
+                                                 "HL-H",
+                                                 "HL-F",
+                                                 "HL-B",
+                                                 "HL-C"))
+
+dl_results$type <- "Single Bioinformatics"
+misclass_dl$type <- "All Bioinformatics"
+dl_results <- rbind(dl_results, misclass_dl)
+
+dl_results$predictee_lab[dl_results$predictee_lab == "HL-F_1"] <- "HL-F"
+
+dl_results$type %<>% factor(levels = c(
+                            "All Bioinformatics","Single Bioinformatics"))
+
+##what's going on?
+
+pdf(width = 6, height = 4.5, file = "dry_proportion.pdf")
+ggplot() +
+  geom_line(data = dl_results %>%
+              filter(transformation %in% c("Proportion (Centered)")) %>%
+              filter(class_var == "specimen") %>%
+              # filter(taxon == "OTU") %>%
+              # filter(classifier  == "Boosted Tree") %>%
+              filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+              filter(predictor_lab != predictee_lab),
+            aes(x = predictor_lab,
+                y = misclass,
+                color = predictee_lab,
+                group = interaction(predictee_lab,type),
+                alpha = type,
+                linetype = type),
+            size= .3) +
+  geom_point(data = dl_results %>%
+               filter(transformation %in% c("Proportion (Centered)")) %>%
+               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+               filter(class_var == "specimen") %>%
+               # filter(classifier == "Boosted Tree") %>%
+               # filter(taxon == "genus") %>%
+               # filter(cross_lab == "Within Lab") %>%
+               mutate(grouper = paste(classifier,predictee_lab,
+                                      sep = "_",
+                                      collapse = "_")),
+             aes(x= predictor_lab,
+                 y = misclass,
+                 color = predictee_lab,
+                 shape = same_lab,
+                 size = same_lab,
+                 alpha = type),
+             size = .5) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_size_discrete(range = c(1,2)) +
+  scale_alpha_discrete(range = c(.5,1)) +
+  scale_linetype_manual(values = c(2,1)) +
+  coord_cartesian(ylim= c(0,1)) +
+  ylab("Misclassification") +
+  xlab("Training Laboratory") +
+  facet_grid(dry_lab ~ taxon) +
+  # ggtitle("Proportion-Scale Specimen Classifier Performance by Taxon") +
+  guides(color = guide_legend(title = "Test Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+         shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top"),
+         size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top"),
+         alpha = guide_legend(title = "Training and Validation", nrow = 2, byrow = 2, title.position = "top"),
+         linetype =guide_legend(title = "Training and Validation", nrow = 2, byrow = 2, title.position = "top") ) +
+  theme_bw(base_size = 8) +
+  theme(axis.text.x=element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 8))
+dev.off()
+
+pdf(width = 6, height = 4.5, file = "dry_clr.pdf")
+ggplot() +
+  geom_line(data = dl_results %>%
+              filter(transformation %in% c("CLR (Centered)")) %>%
+              filter(class_var == "specimen") %>%
+              # filter(taxon == "OTU") %>%
+              # filter(classifier  == "Boosted Tree") %>%
+              filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+              filter(predictor_lab != predictee_lab),
+            aes(x = predictor_lab,
+                y = misclass,
+                color = predictee_lab,
+                group = interaction(predictee_lab,type),
+                alpha = type,
+                linetype = type),
+            size= .3) +
+  geom_point(data = dl_results %>%
+               filter(transformation %in% c("CLR (Centered)")) %>%
+               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+               filter(class_var == "specimen") %>%
+               # filter(classifier == "Boosted Tree") %>%
+               # filter(taxon == "genus") %>%
+               # filter(cross_lab == "Within Lab") %>%
+               mutate(grouper = paste(classifier,predictee_lab,
+                                      sep = "_",
+                                      collapse = "_")),
+             aes(x= predictor_lab,
+                 y = misclass,
+                 color = predictee_lab,
+                 shape = same_lab,
+                 size = same_lab,
+                 alpha = type),
+             size = .5) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_size_discrete(range = c(1,2)) +
+  scale_alpha_discrete(range = c(.5,1)) +
+  scale_linetype_manual(values = c(2,1)) +
+  coord_cartesian(ylim= c(0,1)) +
+  ylab("Misclassification") +
+  xlab("Training Laboratory") +
+  facet_grid(dry_lab ~ taxon) +
+  # ggtitle("Proportion-Scale Specimen Classifier Performance by Taxon") +
+  guides(color = guide_legend(title = "Test Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+         shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top"),
+         size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top"),
+         alpha = guide_legend(title = "Training and Validation", nrow = 2, byrow = 2, title.position = "top"),
+         linetype =guide_legend(title = "Training and Validation", nrow = 2, byrow = 2, title.position = "top") ) +
+  theme_bw(base_size = 8) +
+  theme(axis.text.x=element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 8))
+dev.off()
+
+
+#### scaling sensitivity analysis and phylum-level CRC case-control comparison
+
+included_wet_labs <- included_wet_labs_archive
+glmnet_params <- glmnet_params_archive
+
+misclass_glmnet <- lapply(c("proportion_diff", "proportion_diff_scale",
+                            "clr_pseudo_1_diff", "clr_pseudo_1_diff_scale",
+                            "presence"),
+                          function(x) get_misclass_results("glmnet",x))
+
+misclass_glmnet %<>% (function(x) do.call(rbind,x))
+
+
+misclass <- rbind(misclass_glmnet)
+
+misclass$cross_lab <- (as.character(misclass$predictor_lab) ==
+                         as.character(misclass$predictee_lab)) %>%
+  sapply(function(x) ifelse(x,"Within Lab","Cross Lab"))
+# #
+misclass$class_var[misclass$class_var == "specimen"] <- "Specimen"
+misclass$class_var[misclass$class_var == "specimen_type_collapsed"] <- "Specimen Type"
+levels(misclass$class_var) <- c("Specimen", "Specimen Type")
+
+misclass$predictee_lab %<>% as.factor()
+misclass$predictor_lab %<>% as.factor()
+
+levels(misclass$predictor_lab)[levels(misclass$predictor_lab)  == "HL-F_1"] <- "HL-F"
+levels(misclass$predictee_lab)[levels(misclass$predictee_lab)  == "HL-F_1"] <- "HL-F"
+
+scale.names <- c('Elastic Net.proportion_diff' = "Proportion \nCentered",
+                   'Elastic Net.proportion_diff_scale' = "Proportion \nCentered, Scaled",
+                   'Elastic Net.clr_pseudo_1_diff' = "CLR \nCentered",
+                   'Elastic Net.clr_pseudo_1_diff_scale' = "CLR \nCentered, Scaled",
+                   'OTU' = "OTU",
+                   'genus' = "Genus",
+                   'order' = "Order",
+                   'phylum' = "Phylum")
+
+misclass$trans <- sapply(misclass$transformation,
+                         function(x) ifelse(grepl("proportion",x),"Proportion (Centered)",
+                                                  "CLR (Centered)"))
+
+misclass$scaled <- sapply(misclass$transformation,
+                          function(x) ifelse(grepl("scale",x),"Rescaled",
+                                             "Not Rescaled"))
+
+pdf(width = 6, height = 4, file = "scale_comparison.pdf")
+ggplot() +
+  geom_line(data = misclass %>%
+              filter(transformation %in% c("proportion_diff","clr_pseudo_1_diff",
+                                           "proportion_diff_scale",
+                                           "clr_pseudo_1_diff_scale")) %>%
+              filter(class_var == "Specimen") %>%
+              # filter(taxon == "OTU") %>%
+              # filter(classifier  == "Boosted Tree") %>%
+              filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+              filter(predictor_lab != predictee_lab) %>%
+              mutate(grouper = paste(predictee_lab,
+                                     sep = "_",
+                                     collapse = "_")),
+            aes(x = predictor_lab,
+                y = misclass,
+                color = predictee_lab,
+                group = interaction(predictee_lab, scaled)),
+            size= .3
+  ) +
+  geom_point(data = misclass %>%
+               filter(transformation %in% c("proportion_diff","clr_pseudo_1_diff",
+                                            "proportion_diff_scale",
+                                            "clr_pseudo_1_diff_scale")) %>%
+               filter(class_var == "Specimen") %>%
+               filter(taxon %in% c("OTU","genus","order","phylum")) %>%
+               # filter(classifier == "Boosted Tree") %>%
+               # filter(taxon == "genus") %>%
+               # filter(cross_lab == "Within Lab") %>%
+               mutate(grouper = paste(classifier,predictee_lab,
+                                      sep = "_",
+                                      collapse = "_")),
+             aes(x= predictor_lab,
+                 y = misclass,
+                 color = predictee_lab,
+                 shape = cross_lab,
+                 size = cross_lab),
+             size = .5) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_size_discrete(range = c(1,2)) +
+  scale_alpha_manual(values = c(.5,1)) +
+  scale_linetype_manual(values = c(2,1))+
+  coord_cartesian(ylim= c(0,1)) +
+  ylab("Misclassification") +
+  xlab("Training Laboratory") +
+  facet_grid(interaction(classifier,transformation) ~ taxon,  
+             labeller = as_labeller(scale.names)) +
+  # ggtitle("Proportion-Scale Specimen Classifier Performance by Taxon") +
+  guides(color = guide_legend(title = "Test Laboratory", nrow = 4, byrow = 4, title.position = "top"),
+         shape = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top"),
+         size = guide_legend(title = "Type of Prediction", nrow = 2, byrow = 2, title.position = "top")) +
+  theme_bw(base_size = 8) +
+  theme(axis.text.x=element_text(angle = 45, hjust = 1),
+        plot.title = element_text(size = 8))
+dev.off()
+
+### CRC case/control comparisons for 4 phyla considered by Sinha et al.
+############################## Phylum-level Plots (Supplementary) ############################## 
+phylum_data <- readRDS("HL-B_train_phylum_54332")
+
+phylum_data$transformation <- "Proportion"
+
+phylum_data <- phylum_data[-(1:nrow(phylum_data)),]
+
+for(wl in included_wet_labs){
+  new_data <- rbind( readRDS(paste(wl,"_train_phylum_54332",
+                                   sep = "", 
+                                   collapse = "")),
+                     readRDS(paste(wl,"_test_phylum_54332",
+                                   sep = "",
+                                   collapse = "")
+                     ))
+  new_clr_data <- new_data
+  new_clr_data[,sapply(colnames(new_data),
+                       function(x) grepl("k__",x,fixed = TRUE))] %<>%
+    transform_data("clr_pseudo_1")
+  new_clr_data$transformation <- "CLR"
+  
+  new_proportion_data <- new_data
+  new_proportion_data[,sapply(colnames(new_data),
+                              function(x) grepl("k__",x,fixed = TRUE))] %<>%
+    transform_data("proportion") 
+  new_proportion_data$transformation <- "Proportion"
+  
+  
+  phylum_data <- rbind(phylum_data,
+                       new_clr_data,
+                       new_proportion_data)
+}
+
+phylum_data_long <- phylum_data %>%
+  pivot_longer(starts_with("k__"))
+
+
+
+phylum_data_long$specimen_type_collapsed %<>%
+  factor(levels = c("Oral artificial colony",
+                    "Fecal artificial colony",
+                    "Freeze-dried",
+                    "Fresh",
+                    "Robogut"   
+  ))
+phylum_data_long$specimen %<>%
+  factor(levels = c("sample10", #fresh
+                    "sample101", #robogut
+                    "sample55", #freeze-dried
+                    "sample11", #fresh
+                    "sample56", #freeze-dried
+                    "sample12", #fresh
+                    "sample57", #freeze-dried
+                    "sample13", #fresh
+                    "sample103", #oral mock
+                    "sample104", #fecal mock
+                    "sample14", #fresh
+                    "sample59", #freeze-dried
+                    "sample2", #fresh
+                    "sample61", #freeze-dried
+                    "sample3", #fresh
+                    "sample63", #freeze-dried
+                    "sample4", #fresh
+                    "sample64", #freeze-dried
+                    "sample6", #fresh
+                    "sample8", #fresh,
+                    "sample9", #fresh
+                    "sample102" #robogut
+  ))
+
+
+
+mononym_conversion <- cbind(c("Firmicutes",
+                              "Bacteroidetes",
+                              "Proteobacteria",
+                              "Actinobacteria"),
+                            c("k__Bacteria|p__Firmicutes|",
+                              "k__Bacteria|p__Bacteroidetes|",
+                              "k__Bacteria|p__Proteobacteria|",
+                              "k__Bacteria|p__Actinobacteria|")
+)
+
+phylum_data_long$health_status[is.na(phylum_data_long$health_status)] <- 
+  as.character(phylum_data_long$specimen_type_collapsed)[is.na(phylum_data_long$health_status)]
+
+phylum_data_long$health_status[phylum_data_long$specimen_type_collapsed == "Robogut"] <- "Robogut" 
+
+phylum_data_long$health_status %<>% factor(
+  levels = c("Control",
+             "CRC case",
+             "Sick (Diabetes/RA)",
+             "Sick (ICU)",
+             "Healthy",
+             "Robogut",
+             "Fecal artificial colony",
+             "Oral artificial colony")
+)
+
+for(i in 1:4){
+  
+  pdf(paste("fresh_",mononym_conversion[i,1],".pdf",
+            sep = "",collapse = ""),
+      width = 6.5,
+      height = 7)
+
+  temp_plot <-
+    phylum_data_long %>%
+    filter(name %in% mononym_conversion[i,2]) %>% 
+    filter(specimen_type_collapsed %in% c("Fresh")) %>% 
+    ggplot() + 
+    geom_jitter(aes(x = interaction(specimen,health_status), y = value, 
+                    color = specimen,
+                    group = interaction(specimen,
+                                        Bioinformatics.ID),
+                    shape = dry_lab),
+                
+                height =0,
+                width = .125,
+                size = .5) + 
+    scale_color_viridis_d() +  
+    facet_grid(transformation~sequencing_wetlab,
+               # interaction(Summary,transformation)~sequencing_wetlab,
+               scales = "free_y"#,
+               # labeller = as_labeller(transformation_names)
+    ) + 
+    theme_bw() + 
+    xlab("Specimen") + 
+    ylab("Relative Abundance (CLR or Proportion Scale)") +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 3),
+          legend.position = "bottom",
+          legend.box = "horizontal",
+          text = element_text(size = 10),
+          axis.text = element_text(size = 5),
+          axis.title = element_text(size = 10),
+          plot.title = element_text(size=10),
+          panel.grid.major = element_blank(),
+          # panel.grid.minor = element_blank(),
+          panel.background = element_blank(), 
+          axis.line = element_line(colour = "black")
+    ) + 
+    guides(
+      color = guide_legend(title = "Specimen",
+                           legend.title=element_text(size=8),
+                           title.position="top",
+                           ncol = 4),
+      shape = guide_legend(title = "Bioinformatics \nLaboratory",
+                           legend.title=element_text(size=8),
+                           title.position="top",
+                           ncol = 4)) +
+    ggtitle(paste("Measured Abundance of", mononym_conversion[i,1], "among Fresh Human Specimens
+by Specimen, Health status, Transformation, Sequencing Laboratory, \nand Bioinformatics Laboratory",
+                  sep = " ",collapse =" "))
+  print(temp_plot)
+  dev.off()
+  
+}
+
+

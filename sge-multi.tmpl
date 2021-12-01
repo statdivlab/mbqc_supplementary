@@ -19,6 +19,8 @@
 # define multiple cores per node
 #$ -pe smp 10
 
+## Allocate memory
+#$-l h_vmem=<%= resources$memory %>
 
 ## Use correct queue
 #$ -q <%= resources$queue %>
